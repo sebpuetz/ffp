@@ -1,0 +1,14 @@
+language: python
+dist: bionic
+
+python:
+  - "3.6"
+  - "3.7"
+
+install:
+  - python setup.py develop
+
+script:
+  - pytest
+  - yapf ffp -r
+  - pylint ffp
