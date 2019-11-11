@@ -11,6 +11,9 @@ from abc import ABC, abstractmethod
 from enum import unique, IntEnum
 from typing import IO, Optional, Tuple
 
+MAGIC = b'FiFu'
+VERSION = 0
+
 
 @unique
 class ChunkIdentifier(IntEnum):
@@ -68,3 +71,46 @@ class Chunk(ABC):
         Append the chunk to a file.
         :param file: the file to append the chunk to.
         """
+
+
+class Header(Chunk):
+    """
+    Header Chunk
+
+    The header chunk handles the preamble.
+    """
+    def __init__(self, chunk_ids):
+        self.chunk_ids_ = chunk_ids
+
+    @property
+    def chunk_ids(self) -> list:
+        """
+        Get the chunk IDs from the header
+        :return: Chunk identifiers
+        """
+        return self.chunk_ids_
+
+    @staticmethod
+    def chunk_identifier():
+        return ChunkIdentifier.Header
+
+    @staticmethod
+    def read_chunk(file):
+        magic = file.read(4)
+        if magic != MAGIC:
+            raise IOError("Magic should be b'FiFu', not: " +
+                          magic.decode('utf-8'))
+        version = struct.unpack("<I", file.read(4))[0]
+        if version != VERSION:
+            raise IOError("Unknown model version: " + version)
+        n_chunks = struct.unpack("<I", file.read(4))[0]
+        chunk_ids = list(
+            struct.unpack("<" + "I" * n_chunks, file.read(4 * n_chunks)))
+        return Header(chunk_ids)
+
+    def write_chunk(self, file):
+        file.write(MAGIC)
+        n_chunks = len(self.chunk_ids)
+        file.write(
+            struct.pack("<II" + "I" * n_chunks, VERSION, n_chunks,
+                        *self.chunk_ids))
