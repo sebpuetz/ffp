@@ -9,7 +9,7 @@ skipping unwanted parts.
 import struct
 from abc import ABC, abstractmethod
 from enum import unique, IntEnum
-from typing import IO, Optional, Tuple
+from typing import IO, Optional, Tuple, Iterable
 
 MAGIC = b'FiFu'
 VERSION = 0
@@ -114,3 +114,24 @@ class Header(Chunk):
         file.write(
             struct.pack("<II" + "I" * n_chunks, VERSION, n_chunks,
                         *self.chunk_ids))
+
+
+def find_chunk(file: IO[bytes],
+               chunks: Iterable[ChunkIdentifier]) -> Optional[ChunkIdentifier]:
+    """
+    Find one of the specified chunks in the given finalfusion file.
+
+    Seeks the file to the beginning of the first chunk in `chunks` found.
+    :param file: finalfusion file
+    :param chunks: iterable of chunk identifiers
+    :return: the first found chunk identifier
+    """
+    file.seek(0)
+    Header.read_chunk(file)
+    while True:
+        chunk = Chunk.read_chunk_header(file)
+        if chunk is None:
+            return None
+        if chunk[0] in chunks:
+            return chunk[0]
+        file.seek(chunk[1], 1)
