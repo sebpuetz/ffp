@@ -11,5 +11,5 @@ install:
 
 script:
   - pytest
-  - yapf ffp -r
+  - yapf ffp -r --diff
   - pylint ffp
