@@ -59,6 +59,18 @@ class Chunk(ABC):
         chunk_id, chunk_size = struct.unpack("<IQ", buffer)
         return ChunkIdentifier(chunk_id), chunk_size
 
+    def write(self, filename):
+        """
+        Write the chunk to the given filename in finalfusion format
+        :param filename: filename
+        """
+        with open(filename, "wb") as file:
+            chunk_id = self.chunk_identifier()
+            if chunk_id == ChunkIdentifier.Header:
+                raise ValueError("Cannot write header to file by itself")
+            Header([chunk_id]).write_chunk(file)
+            self.write_chunk(file)
+
     @staticmethod
     @abstractmethod
     def chunk_identifier() -> ChunkIdentifier:

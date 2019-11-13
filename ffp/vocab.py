@@ -40,16 +40,6 @@ class Vocab(ffp.io.Chunk):
             raise IOError("File did not contain a supported vocabulary")
         return vocab
 
-    def write(self, filename: str):
-        """
-        Write the vocabulary to the given file in finalfusion format.
-        :param filename:
-        """
-        with open(filename, "wb") as file:
-            header = ffp.io.Header([self.chunk_identifier()])
-            header.write_chunk(file)
-            self.write_chunk(file)
-
     @property
     def words(self) -> list:
         """

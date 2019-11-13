@@ -96,7 +96,8 @@ def test_ff_buckets_roundtrip(tests_root):
 
 
 def test_ff_buckets_lookup(tests_root):
-    v = ffp.vocab.Vocab.read(os.path.join(tests_root, "data", "ff_buckets.fifu"))
+    v = ffp.vocab.Vocab.read(
+        os.path.join(tests_root, "data", "ff_buckets.fifu"))
     assert v.words[0] == "one"
     assert v["one"] == 0
     tuebingen_buckets = [

@@ -37,15 +37,6 @@ class Storage(ffp.io.Chunk):
                     "Quantized storage is not yet implemented.")
             raise IOError("unexpected chunk: " + str(chunk))
 
-    def write(self, filename: str):
-        """
-        Write storage to the given file in finalfusion format
-        :param filename: filename
-        """
-        with open(filename, "wb") as file:
-            ffp.io.Header([self.chunk_identifier()]).write_chunk(file)
-            self.write_chunk(file)
-
     @property
     @abc.abstractmethod
     def shape(self) -> Tuple[int, int]:

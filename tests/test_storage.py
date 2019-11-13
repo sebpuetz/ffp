@@ -14,7 +14,8 @@ def test_read_array(tests_root, vocab_array_tuple):
         ffp.storage.Storage.read(1)
     with pytest.raises(IOError):
         ffp.storage.Storage.read("foo")
-    e = ffp.storage.Storage.read(os.path.join(tests_root, "data", "embeddings.fifu"))
+    e = ffp.storage.Storage.read(
+        os.path.join(tests_root, "data", "embeddings.fifu"))
     matrix = vocab_array_tuple[1]
     matrix = matrix.squeeze() / np.linalg.norm(matrix, axis=1, keepdims=True)
     assert e.shape == (7, 10)
@@ -28,7 +29,9 @@ def test_mmap_array(tests_root, vocab_array_tuple):
         ffp.storage.Storage.read(1, mmap=True)
     with pytest.raises(IOError):
         ffp.storage.Storage.read("foo", mmap=True)
-    e = ffp.storage.Storage.read(os.path.join(tests_root, "data", "embeddings.fifu"), mmap=True)
+    e = ffp.storage.Storage.read(os.path.join(tests_root, "data",
+                                              "embeddings.fifu"),
+                                 mmap=True)
     matrix = vocab_array_tuple[1]
     matrix = matrix.squeeze() / np.linalg.norm(matrix, axis=1, keepdims=True)
     assert e.shape == (7, 10)
@@ -38,7 +41,8 @@ def test_mmap_array(tests_root, vocab_array_tuple):
 def test_array_roundtrip(tests_root):
     tmp_dir = tempfile.gettempdir()
     filename = os.path.join(tmp_dir, "write_simple.fifu")
-    s = ffp.storage.Storage.read(os.path.join(tests_root, "data", "embeddings.fifu"))
+    s = ffp.storage.Storage.read(
+        os.path.join(tests_root, "data", "embeddings.fifu"))
     zero = s[0]
     s.write(filename)
     s2 = ffp.storage.Storage.read(filename)
@@ -51,7 +55,9 @@ def test_array_roundtrip(tests_root):
 def test_array_roundtrip_mmap(tests_root):
     tmp_dir = tempfile.gettempdir()
     filename = os.path.join(tmp_dir, "write_simple.fifu")
-    s = ffp.storage.Storage.read(os.path.join(tests_root, "data", "embeddings.fifu"), mmap=True)
+    s = ffp.storage.Storage.read(os.path.join(tests_root, "data",
+                                              "embeddings.fifu"),
+                                 mmap=True)
     zero = s[0]
     s.write(filename)
     s2 = ffp.storage.Storage.read(filename, mmap=True)
@@ -73,12 +79,14 @@ def test_from_matrix():
     with pytest.raises(TypeError):
         _ = ffp.storage.NdArray(np.tile(np.arange(0, 10), (10, 1)))
     with pytest.raises(TypeError):
-        _ = ffp.storage.NdArray(np.tile(np.arange(0, 10, dtype=np.float), (10, 1)))
+        _ = ffp.storage.NdArray(
+            np.tile(np.arange(0, 10, dtype=np.float), (10, 1)))
     assert np.allclose(matrix, s)
 
 
 def test_indexing():
-    matrix = np.float32(np.random.random_sample(sorted(np.random.randint(10, 100, 2))))
+    matrix = np.float32(
+        np.random.random_sample(sorted(np.random.randint(10, 100, 2))))
     s = ffp.storage.NdArray(matrix)
     assert np.allclose(matrix, s)
     for _ in range(1000):
@@ -140,7 +148,8 @@ def test_slice_slice():
             upper = np.random.randint(-len(matrix) * 2, len(matrix) * 2)
             lower = np.random.randint(-len(matrix) * 2, len(matrix) * 2)
             step = np.random.randint(-len(matrix) * 2, len(matrix) * 2)
-            ctx = pytest.raises(ValueError) if step == 0 else contextlib.suppress()
+            ctx = pytest.raises(
+                ValueError) if step == 0 else contextlib.suppress()
             with ctx:
                 matrix = matrix[lower:upper:step]
             with ctx:
@@ -174,5 +183,6 @@ def test_iter_sliced():
         step = np.random.randint(-len(matrix) * 3, len(matrix) * 3)
         if step == 0:
             continue
-        for storage_row, matrix_row in zip(s[lower:upper:step], matrix[lower:upper:step]):
+        for storage_row, matrix_row in zip(s[lower:upper:step],
+                                           matrix[lower:upper:step]):
             assert np.allclose(storage_row, matrix_row)
