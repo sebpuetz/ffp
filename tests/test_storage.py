@@ -44,6 +44,9 @@ def test_array_roundtrip(tests_root):
     s = ffp.storage.Storage.read(
         os.path.join(tests_root, "data", "embeddings.fifu"))
     zero = s[0]
+    assert isinstance(zero, np.ndarray)
+    assert not isinstance(zero, ffp.storage.Storage)
+    assert not isinstance(zero, ffp.storage.NdArray)
     s.write(filename)
     s2 = ffp.storage.Storage.read(filename)
     zero2 = s2[0]
@@ -154,6 +157,9 @@ def test_slice_slice():
                 matrix = matrix[lower:upper:step]
             with ctx:
                 s = s[lower:upper:step]
+                assert isinstance(s, np.ndarray)
+                assert isinstance(s, ffp.storage.Storage)
+                assert isinstance(s, ffp.storage.NdArray)
             assert np.allclose(matrix, s)
 
 

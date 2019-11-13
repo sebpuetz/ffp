@@ -44,9 +44,6 @@ class Storage(ffp.io.Chunk):
         Get the shape of the storage
         :return: int tuple containing (rows, cols)
         """
-    @abc.abstractmethod
-    def __getitem__(self, idx):
-        pass
 
 
 class NdArray(np.ndarray, Storage):
@@ -139,5 +136,5 @@ class NdArray(np.ndarray, Storage):
 
     def __getitem__(self, key):
         if isinstance(key, slice):
-            return NdArray(super().__getitem__(key))
-        return super().__getitem__(key)
+            return super().__getitem__(key)
+        return super().__getitem__(key).view(np.ndarray)
