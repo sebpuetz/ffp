@@ -5,24 +5,11 @@ import struct
 from abc import abstractmethod
 from typing import List, Optional, Dict, Tuple, IO, Iterable, Any, Union
 
-from ffp import io
-from ffp.vocab_rs import FastTextIndexer, FinalfusionHashIndexer, \
-    word_ngrams as _word_ngrams
+import ffp.io
+import ffp.subwords
 
 
-def word_ngrams(word, min_n=3, max_n=6, bracket=True) -> List[str]:
-    """
-    Get the ngrams for the given word.
-    :param word: word
-    :param min_n: lower bound of n-gram range
-    :param max_n: upper bound of n-gram range
-    :param bracket: whether to bracket the word with '<' and '>'
-    :return: list of n-grams
-    """
-    return _word_ngrams(word, min_n, max_n, bracket)
-
-
-class Vocab(io.Chunk):
+class Vocab(ffp.io.Chunk):
     """
     Common interface to finalfusion vocabularies.
     """
@@ -44,9 +31,9 @@ class Vocab(io.Chunk):
         :return: The first vocabulary found in the file.
         """
         vocab_chunks = [
-            io.ChunkIdentifier.SimpleVocab,
-            io.ChunkIdentifier.BucketSubwordVocab,
-            io.ChunkIdentifier.FastTextSubwordVocab,
+            ffp.io.ChunkIdentifier.SimpleVocab,
+            ffp.io.ChunkIdentifier.BucketSubwordVocab,
+            ffp.io.ChunkIdentifier.FastTextSubwordVocab,
         ]
         vocab = Vocab._read(filename, vocab_chunks)
         if vocab is None:
@@ -59,7 +46,7 @@ class Vocab(io.Chunk):
         :param filename:
         """
         with open(filename, "wb") as file:
-            header = io.Header([self.chunk_identifier()])
+            header = ffp.io.Header([self.chunk_identifier()])
             header.write_chunk(file)
             self.write_chunk(file)
 
@@ -126,7 +113,7 @@ class Vocab(io.Chunk):
         return True
 
     @staticmethod
-    def _read(filename: str, target: List[io.ChunkIdentifier]):
+    def _read(filename: str, target: List[ffp.io.ChunkIdentifier]):
         """
         Read the first chunk specified in `target` from `filename`.
         :param filename: filename
@@ -134,14 +121,16 @@ class Vocab(io.Chunk):
         :return: Vocab
         """
         with open(filename, "rb") as file:
-            chunk = io.find_chunk(file, target)
+            chunk = ffp.io.find_chunk(file, target)
             if chunk is None:
                 return None
-            if chunk == io.ChunkIdentifier.SimpleVocab:
+            if chunk == ffp.io.ChunkIdentifier.SimpleVocab:
                 return SimpleVocab.read_chunk(file)
-            if chunk == io.ChunkIdentifier.BucketSubwordVocab:
+            if chunk == ffp.io.ChunkIdentifier.BucketSubwordVocab:
                 return FinalfusionBucketVocab.read_chunk(file)
-            if chunk == io.ChunkIdentifier.FastTextSubwordVocab:
+            if chunk == ffp.io.ChunkIdentifier.ExplicitSubwordVocab:
+                return ExplicitVocab.read_chunk(file)
+            if chunk == ffp.io.ChunkIdentifier.FastTextSubwordVocab:
                 return FastTextVocab.read_chunk(file)
             raise IOError("unknown vocab type: " + str(chunk))
 
@@ -187,7 +176,8 @@ class SubwordVocab(Vocab):
     """
     def __init__(self,
                  words,
-                 indexer: Union[FinalfusionHashIndexer, FastTextIndexer],
+                 indexer: Union[ffp.subwords.FinalfusionHashIndexer, ffp.
+                                subwords.FastTextIndexer],
                  ngram_range: Tuple[int, int] = (3, 6),
                  index: Optional[Dict[str, int]] = None):
         super().__init__(words, index)
@@ -206,9 +196,9 @@ class SubwordVocab(Vocab):
     @staticmethod
     def read(filename) -> 'SubwordVocab':
         vocab_chunks = [
-            io.ChunkIdentifier.BucketSubwordVocab,
-            io.ChunkIdentifier.ExplicitSubwordVocab,
-            io.ChunkIdentifier.FastTextSubwordVocab
+            ffp.io.ChunkIdentifier.BucketSubwordVocab,
+            ffp.io.ChunkIdentifier.ExplicitSubwordVocab,
+            ffp.io.ChunkIdentifier.FastTextSubwordVocab
         ]
         vocab = SubwordVocab._read(filename, vocab_chunks)
         if vocab is None:
@@ -236,7 +226,10 @@ class SubwordVocab(Vocab):
         return self._max_n
 
     @property
-    def indexer(self) -> Union[FinalfusionHashIndexer, FastTextIndexer]:
+    def indexer(
+            self
+    ) -> Union[ffp.subwords.ExplicitIndexer, ffp.subwords.
+               FinalfusionHashIndexer, ffp.subwords.FastTextIndexer]:
         """
         Get this vocab's indexer. The indexer produces indices for given n-grams.
 
@@ -245,6 +238,15 @@ class SubwordVocab(Vocab):
         indices.
         """
         return self._indexer
+
+    def subwords(self, item: str, bracket=True) -> List[str]:
+        """
+        Get the n-grams of the given item as a list.
+        :param item: the query item
+        :param bracket: whether to bracket the item with '<' and '>'
+        :return: The list of n-grams.
+        """
+        return ffp.subwords.word_ngrams(item, self.min_n, self.max_n, bracket)
 
     def subword_indices(self, item: str, bracket=True) -> List[int]:
         """
@@ -272,11 +274,11 @@ class SubwordVocab(Vocab):
         return super(SubwordVocab, self).__eq__(other)
 
     @staticmethod
-    def chunk_identifier() -> io.ChunkIdentifier:
+    def chunk_identifier() -> ffp.io.ChunkIdentifier:
         pass
 
     @staticmethod
-    def read_chunk(file: IO[bytes]) -> 'io.Chunk':
+    def read_chunk(file: IO[bytes]) -> 'ffp.io.Chunk':
         pass
 
     def write_chunk(self, file: IO[bytes]):
@@ -290,20 +292,41 @@ class BucketVocab(SubwordVocab):
     @staticmethod
     def read(filename) -> 'BucketVocab':
         vocab_chunks = [
-            io.ChunkIdentifier.BucketSubwordVocab,
-            io.ChunkIdentifier.FastTextSubwordVocab
+            ffp.io.ChunkIdentifier.BucketSubwordVocab,
+            ffp.io.ChunkIdentifier.FastTextSubwordVocab
         ]
         vocab = BucketVocab._read(filename, vocab_chunks)
         if vocab is None:
             raise IOError("File did not contain a vocabulary")
         return vocab
 
+    def to_explicit(self) -> 'ExplicitVocab':
+        """
+        Convert a bucket vocabulary to an explicit vocab.
+        :return: ExplicitVocab
+        """
+        ngram_index = dict()
+        idx_index = dict()
+        ngrams = []
+        for word in self.words:
+            token_ngrams = self.subwords(word)
+            for ngram in token_ngrams:
+                if ngram not in ngram_index:
+                    ngrams.append(ngram)
+                    idx = self.indexer(ngram)
+                    if idx not in idx_index:
+                        idx_index[idx] = len(idx_index)
+                    ngram_index[ngram] = idx_index[idx]
+        indexer = ffp.subwords.ExplicitIndexer(ngrams, ngram_index)
+        return ExplicitVocab(self.words, indexer, (self.min_n, self.max_n),
+                             self.word_index)
+
     @staticmethod
-    def chunk_identifier() -> io.ChunkIdentifier:
+    def chunk_identifier() -> ffp.io.ChunkIdentifier:
         pass
 
     @staticmethod
-    def read_chunk(file: IO[bytes]) -> 'io.Chunk':
+    def read_chunk(file: IO[bytes]) -> 'ffp.io.Chunk':
         pass
 
     def write_chunk(self, file):
@@ -313,7 +336,7 @@ class BucketVocab(SubwordVocab):
         chunk_length = struct.calcsize(
             "<QIII") + len(b_words) * struct.calcsize("<I") + sum(
                 [len(word) for word in b_words])
-        if chunk_id == io.ChunkIdentifier.FastTextSubwordVocab:
+        if chunk_id == ffp.io.ChunkIdentifier.FastTextSubwordVocab:
             buckets = self.indexer.idx_bound
         else:
             buckets = self.indexer.buckets_exp
@@ -342,13 +365,13 @@ class FinalfusionBucketVocab(BucketVocab):
                  ngram_range: Tuple[int, int] = (3, 6),
                  index=None):
         if indexer is None:
-            indexer = FinalfusionHashIndexer(21)
+            indexer = ffp.subwords.FinalfusionHashIndexer(21)
         super().__init__(words, indexer, ngram_range, index)
 
     @staticmethod
     def read(filename):
         vocab = FinalfusionBucketVocab._read(
-            filename, [io.ChunkIdentifier.BucketSubwordVocab])
+            filename, [ffp.io.ChunkIdentifier.BucketSubwordVocab])
         if vocab is None:
             raise IOError("File did not contain a vocabulary")
         return vocab
@@ -359,12 +382,12 @@ class FinalfusionBucketVocab(BucketVocab):
             "<QIII", file.read(struct.calcsize("<QIII")))
         words, index = FinalfusionBucketVocab._read_items(file, length)
         ngram_range = (min_n, max_n)
-        indexer = FinalfusionHashIndexer(buckets)
+        indexer = ffp.subwords.FinalfusionHashIndexer(buckets)
         return FinalfusionBucketVocab(words, indexer, ngram_range, index)
 
     @staticmethod
     def chunk_identifier():
-        return io.ChunkIdentifier.BucketSubwordVocab
+        return ffp.io.ChunkIdentifier.BucketSubwordVocab
 
 
 class FastTextVocab(BucketVocab):
@@ -377,13 +400,13 @@ class FastTextVocab(BucketVocab):
                  ngram_range: Tuple[int, int] = (3, 6),
                  index=None):
         if indexer is None:
-            indexer = FastTextIndexer(2000000)
+            indexer = ffp.subwords.FastTextIndexer(2000000)
         super().__init__(words, indexer, ngram_range, index)
 
     @staticmethod
     def read(filename):
-        vocab = FastTextVocab._read(filename,
-                                    [io.ChunkIdentifier.FastTextSubwordVocab])
+        vocab = FastTextVocab._read(
+            filename, [ffp.io.ChunkIdentifier.FastTextSubwordVocab])
         if vocab is None:
             raise IOError("File did not contain a vocabulary")
         return vocab
@@ -394,12 +417,85 @@ class FastTextVocab(BucketVocab):
             "<QIII", file.read(struct.calcsize("<QIII")))
         words, index = FastTextVocab._read_items(file, length)
         ngram_range = (min_n, max_n)
-        indexer = FastTextIndexer(buckets)
+        indexer = ffp.subwords.FastTextIndexer(buckets)
         return FastTextVocab(words, indexer, ngram_range, index)
 
     @staticmethod
     def chunk_identifier():
-        return io.ChunkIdentifier.FastTextSubwordVocab
+        return ffp.io.ChunkIdentifier.FastTextSubwordVocab
+
+
+class ExplicitVocab(SubwordVocab):
+    """
+    A vocabulary with explicitly stored n-grams.
+    """
+    def __init__(self,
+                 words,
+                 indexer,
+                 ngram_range: Tuple[int, int] = (3, 6),
+                 index=None):
+        assert isinstance(indexer, ffp.subwords.ExplicitIndexer)
+        super().__init__(words, indexer, ngram_range, index)
+
+    @staticmethod
+    def read(filename) -> 'ExplicitVocab':
+        vocab = ExplicitVocab._read(
+            filename, [ffp.io.ChunkIdentifier.ExplicitSubwordVocab])
+        if vocab is None:
+            raise IOError("File did not contain a vocabulary")
+        return vocab
+
+    @property
+    def indexer(self):
+        return self._indexer
+
+    def subword_indices(self, item, bracket=True):
+        ngrams = self.subwords(item, bracket)
+        return [
+            idx + len(self) for idx in (self.indexer(ngram)
+                                        for ngram in ngrams) if idx is not None
+        ]
+
+    @staticmethod
+    def chunk_identifier():
+        return ffp.io.ChunkIdentifier.ExplicitSubwordVocab
+
+    @staticmethod
+    def read_chunk(file) -> 'ExplicitVocab':
+        length, ngram_length, min_n, max_n = struct.unpack(
+            "<QQII", file.read(struct.calcsize("<QQII")))
+        words, word_index = ExplicitVocab._read_items(file, length)
+        ngrams, ngram_index = ExplicitVocab._read_items(file,
+                                                        ngram_length,
+                                                        indices=True)
+        indexer = ffp.subwords.ExplicitIndexer(ngrams, ngram_index)
+        return ExplicitVocab(words, indexer, (min_n, max_n), word_index)
+
+    def write_chunk(self, file) -> None:
+        chunk_id = self.chunk_identifier()
+        file.write(struct.pack("<I", int(chunk_id)))
+
+        b_words = [bytes(word, "utf-8") for word in self.words]
+        b_len_words = len(b_words) * struct.calcsize("<I") + sum(
+            [len(word) for word in b_words])
+
+        b_ngrams = [bytes(ngram, "utf-8") for ngram in self.indexer]
+        b_len_ngrams = len(b_ngrams) * struct.calcsize("<I") + sum(
+            [len(ngram) for ngram in b_ngrams])
+
+        chunk_length = struct.calcsize("<QQII") + b_len_words + b_len_ngrams
+
+        file.write(
+            struct.pack("<QQQII", chunk_length, len(b_words), len(b_ngrams),
+                        self.min_n, self.max_n))
+
+        self._write_words_binary(b_words, file)
+        for i, ngram in enumerate(b_ngrams):
+            file.write(struct.pack("<I", len(ngram)))
+            file.write(ngram)
+            file.write(
+                struct.pack("<Q",
+                            self.indexer.ngram_index[self.indexer.ngrams[i]]))
 
 
 class SimpleVocab(Vocab):
@@ -408,7 +504,8 @@ class SimpleVocab(Vocab):
     """
     @staticmethod
     def read(filename) -> 'SimpleVocab':
-        vocab = SimpleVocab._read(filename, [io.ChunkIdentifier.SimpleVocab])
+        vocab = SimpleVocab._read(filename,
+                                  [ffp.io.ChunkIdentifier.SimpleVocab])
         if vocab is None:
             raise IOError("File did not contain a vocabulary")
         return vocab
@@ -430,7 +527,7 @@ class SimpleVocab(Vocab):
 
     @staticmethod
     def chunk_identifier():
-        return io.ChunkIdentifier.SimpleVocab
+        return ffp.io.ChunkIdentifier.SimpleVocab
 
     def __getitem__(self, item):
         return self.word_index[item]
