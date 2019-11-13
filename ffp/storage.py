@@ -80,7 +80,7 @@ class NdArray(np.ndarray, Storage):
 
     @staticmethod
     def read_chunk(file) -> 'NdArray':
-        rows, cols = NdArray.read_array_header(file)
+        rows, cols = NdArray._read_array_header(file)
         array = file.read(struct.calcsize("f") * rows * cols)
         array = np.ndarray(buffer=array, shape=(rows, cols), dtype=np.float32)
         return NdArray(array)
@@ -98,7 +98,7 @@ class NdArray(np.ndarray, Storage):
         :param file: file containing the storage, positioned at the first element of the buffer.
         :return: NdArray backed by the mmapped array
         """
-        rows, cols = NdArray.read_array_header(file)
+        rows, cols = NdArray._read_array_header(file)
         offset = file.tell()
         file.seek(rows * cols * struct.calcsize('f'), 1)
         return NdArray(
@@ -109,7 +109,7 @@ class NdArray(np.ndarray, Storage):
                       shape=(rows, cols)))
 
     @staticmethod
-    def read_array_header(file: IO[bytes]) -> Tuple[int, int]:
+    def _read_array_header(file: IO[bytes]) -> Tuple[int, int]:
         """
         Read the header of an array chunk. This contains the matrix dimensions and the datatype.
 

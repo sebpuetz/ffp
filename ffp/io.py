@@ -44,21 +44,6 @@ class Chunk(ABC):
     """
     Common methods that all finalfusion `Chunk`s need to implement.
     """
-    @staticmethod
-    def read_chunk_header(file) -> Optional[Tuple[ChunkIdentifier, int]]:
-        """
-        Reads the chunk header, after successfully reading the header, `ChunkIdentifier` and
-        the chunk size in bytes are returned.
-
-        :param file: file in finalfusion format at the beginning of a chunk.
-        :return: (ChunkIdentifier, chunk_size)
-        """
-        buffer = file.read(12)
-        if len(buffer) < 12:
-            return None
-        chunk_id, chunk_size = struct.unpack("<IQ", buffer)
-        return ChunkIdentifier(chunk_id), chunk_size
-
     def write(self, filename):
         """
         Write the chunk to the given filename in finalfusion format
@@ -137,6 +122,21 @@ class Header(Chunk):
                         *self.chunk_ids))
 
 
+def read_chunk_header(file) -> Optional[Tuple[ChunkIdentifier, int]]:
+    """
+    Reads the chunk header, after successfully reading the header, `ChunkIdentifier` and
+    the chunk size in bytes are returned.
+
+    :param file: file in finalfusion format at the beginning of a chunk.
+    :return: (ChunkIdentifier, chunk_size)
+    """
+    buffer = file.read(12)
+    if len(buffer) < 12:
+        return None
+    chunk_id, chunk_size = struct.unpack("<IQ", buffer)
+    return ChunkIdentifier(chunk_id), chunk_size
+
+
 def find_chunk(file: IO[bytes],
                chunks: Iterable[ChunkIdentifier]) -> Optional[ChunkIdentifier]:
     """
@@ -150,7 +150,7 @@ def find_chunk(file: IO[bytes],
     file.seek(0)
     Header.read_chunk(file)
     while True:
-        chunk = Chunk.read_chunk_header(file)
+        chunk = read_chunk_header(file)
         if chunk is None:
             return None
         if chunk[0] in chunks:

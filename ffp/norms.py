@@ -17,6 +17,8 @@ class Norms(np.ndarray, ffp.io.Chunk):
     """
     def __new__(cls, array):
         assert array.ndim == 1, "norms need to be 1-d"
+        if array.dtype != np.float32:
+            raise TypeError("1-d float array expected")
         obj = array.view(cls)
         return obj
 

@@ -60,7 +60,7 @@ def test_array_roundtrip_mmap(tests_root):
                                  mmap=True)
     zero = s[0]
     s.write(filename)
-    s2 = ffp.storage.Storage.read(filename, mmap=True)
+    s2 = ffp.storage.Storage.read(filename, True)
     zero2 = s2[0]
     assert np.allclose(zero, zero2)
     assert s.shape == s2.shape
