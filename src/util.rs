@@ -20,3 +20,7 @@ pub(crate) fn type_err(msg: impl Into<String>) -> PyErr {
 pub(crate) fn val_err(msg: impl Into<String>) -> PyErr {
     exceptions::ValueError::py_err(msg.into())
 }
+
+pub(crate) fn io_err(msg: impl Into<String>) -> PyErr {
+    exceptions::IOError::py_err(msg.into())
+}

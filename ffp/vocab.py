@@ -7,6 +7,9 @@ from typing import List, Optional, Dict, Tuple, IO, Iterable, Any, Union
 
 import ffp.io
 import ffp.subwords
+from ffp.vocab_rs import count_and_sort_tokens as _count_and_sort_tokens,\
+    count_and_sort_tokens_and_ngrams as _count_and_sort_tokens_and_ngrams,\
+    MinFreq, TargetSize
 
 
 class Vocab(ffp.io.Chunk):
@@ -33,6 +36,7 @@ class Vocab(ffp.io.Chunk):
         vocab_chunks = [
             ffp.io.ChunkIdentifier.SimpleVocab,
             ffp.io.ChunkIdentifier.BucketSubwordVocab,
+            ffp.io.ChunkIdentifier.ExplicitSubwordVocab,
             ffp.io.ChunkIdentifier.FastTextSubwordVocab,
         ]
         vocab = Vocab._read(filename, vocab_chunks)
@@ -367,6 +371,26 @@ class FinalfusionBucketVocab(BucketVocab):
         return vocab
 
     @staticmethod
+    def from_corpus(
+            filename,
+            cutoff=MinFreq(30),
+            indexer: Optional[ffp.subwords.FinalfusionHashIndexer] = None,
+            ngram_range: Tuple[int, int] = (3, 6)
+    ) -> Tuple['ffp.subwords.FinalfusionBucketVocab', List[int]]:
+        """
+        Construct a Finalfusion Bucket Vocabulary from the given corpus.
+        :param filename: corpus
+        :param cutoff:
+        :param indexer:
+        :param ngram_range:
+        :return:
+        """
+        assert isinstance(
+            indexer, ffp.subwords.FinalfusionHashIndexer) or indexer is None
+        words, counts = _count_and_sort_tokens(filename, cutoff)
+        return FinalfusionBucketVocab(words, indexer, ngram_range), counts
+
+    @staticmethod
     def read_chunk(file) -> 'FinalfusionBucketVocab':
         length, min_n, max_n, buckets = struct.unpack(
             "<QIII", file.read(struct.calcsize("<QIII")))
@@ -402,6 +426,26 @@ class FastTextVocab(BucketVocab):
         return vocab
 
     @staticmethod
+    def from_corpus(filename,
+                    cutoff=MinFreq(30),
+                    indexer: Optional[ffp.subwords.FastTextIndexer] = None,
+                    ngram_range: Tuple[int, int] = (3, 6)
+                    ) -> Tuple['FastTextVocab', List[int]]:
+        """
+        Construct a fastText vocabulary from the given corpus.
+        :param filename:
+        :param cutoff:
+        :param indexer:
+        :param min_n:
+        :param max_n:
+        :return:
+        """
+        assert isinstance(indexer,
+                          ffp.subwords.FastTextIndexer) or indexer is None
+        words, counts = _count_and_sort_tokens(filename, cutoff)
+        return FastTextVocab(words, indexer, ngram_range), counts
+
+    @staticmethod
     def read_chunk(file) -> 'FastTextVocab':
         length, min_n, max_n, buckets = struct.unpack(
             "<QIII", file.read(struct.calcsize("<QIII")))
@@ -434,6 +478,33 @@ class ExplicitVocab(SubwordVocab):
         if vocab is None:
             raise IOError("File did not contain a vocabulary")
         return vocab
+
+    @staticmethod
+    def from_corpus(corpus,
+                    ngram_range: Tuple[int, int] = (3, 6),
+                    token_cutoff: Union[MinFreq, TargetSize] = MinFreq(30),
+                    ngram_cutoff: Union[MinFreq, TargetSize] = MinFreq(30)
+                    ) -> Tuple['ExplicitVocab', List[int], List[int]]:
+        """
+        Construct a explicit vocabulary from the given corpus.
+        :param corpus: file containing white-space seperated tokens.
+        :param ngram_range: bounds of extracted n-gram range
+        :param token_cutoff: set the number of tokens in the vocabulary, either as a frequency
+        cutoff or as a target size
+        :param ngram_cutoff: set the number of ngrams in the vocabulary, either as a frequency
+        cutoff or as a target size
+        :return: a tuple containing the vocabulary, token counts and n-gram counts
+        """
+        min_n, max_n = ngram_range
+        (words,
+         ngrams) = _count_and_sort_tokens_and_ngrams(corpus, token_cutoff,
+                                                     ngram_cutoff, min_n,
+                                                     max_n)
+        words, word_counts = words
+        ngrams, ngram_counts = ngrams
+        indexer = ffp.subwords.ExplicitIndexer(ngrams)
+        return ExplicitVocab(words, indexer,
+                             ngram_range), word_counts, ngram_counts
 
     @property
     def indexer(self):
@@ -501,6 +572,18 @@ class SimpleVocab(Vocab):
         return vocab
 
     @staticmethod
+    def from_corpus(filename,
+                    cutoff=MinFreq(30)) -> Tuple['SimpleVocab', List[int]]:
+        """
+        Construct a simple vocabulary from the given corpus.
+        :param filename:
+        :param cutoff:
+        :return:
+        """
+        words, counts = _count_and_sort_tokens(filename, cutoff)
+        return SimpleVocab(words), counts
+
+    @staticmethod
     def read_chunk(file) -> 'SimpleVocab':
         length = struct.unpack("<Q", file.read(8))[0]
         words, index = SimpleVocab._read_items(file, length)
@@ -524,3 +607,21 @@ class SimpleVocab(Vocab):
 
     def idx(self, item, default=None):
         return self.word_index.get(item, default)
+
+
+def min_freq(freq: int) -> MinFreq:
+    """
+    Construct new MinFreq
+    :param freq: frequency cutoff
+    :return: MinFreq
+    """
+    return MinFreq(freq)
+
+
+def target_size(size: int) -> TargetSize:
+    """
+    Construct new TargetSize
+    :param size: target size
+    :return: TargetSize
+    """
+    return TargetSize(size)
