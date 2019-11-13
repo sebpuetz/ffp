@@ -31,6 +31,15 @@ class ChunkIdentifier(IntEnum):
     ExplicitSubwordVocab = 8
 
 
+@unique
+class TypeId(IntEnum):
+    """
+    Enum identifying the different data types in finalfusion arrays.
+    """
+    u8 = 1
+    f32 = 10
+
+
 class Chunk(ABC):
     """
     Common methods that all finalfusion `Chunk`s need to implement.
@@ -135,3 +144,13 @@ def find_chunk(file: IO[bytes],
         if chunk[0] in chunks:
             return chunk[0]
         file.seek(chunk[1], 1)
+
+
+def pad_float(pos):
+    """
+    Return the required padding to the next page boundary from a given position.
+    :param pos:
+    :return:
+    """
+    float_size = struct.calcsize('<f')
+    return float_size - (pos % float_size)

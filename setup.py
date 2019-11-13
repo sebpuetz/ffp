@@ -13,6 +13,7 @@ setup(
     rust_extensions=[
         RustExtension('ffp.vocab_rs', 'Cargo.toml', debug=False)
     ],
+    requires=["numpy"],
     include_package_data=True,
     zip_safe=False,
 )
