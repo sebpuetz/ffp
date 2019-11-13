@@ -1,8 +1,8 @@
 """
 Finalfusion vocabularies.
 """
+import abc
 import struct
-from abc import abstractmethod
 from typing import List, Optional, Dict, Tuple, IO, Iterable, Any, Union
 
 import ffp.io
@@ -74,7 +74,7 @@ class Vocab(ffp.io.Chunk):
         """
         return len(self)
 
-    @abstractmethod
+    @abc.abstractmethod
     def idx(self, item: str, default: Union[list, int, None] = None
             ) -> Optional[Union[list, int]]:
         """

@@ -2,9 +2,8 @@
 Finalfusion storage
 """
 
-from abc import abstractmethod
+import abc
 import struct
-from struct import calcsize
 from typing import IO, Tuple
 
 import numpy as np
@@ -48,13 +47,13 @@ class Storage(ffp.io.Chunk):
             self.write_chunk(file)
 
     @property
-    @abstractmethod
+    @abc.abstractmethod
     def shape(self) -> Tuple[int, int]:
         """
         Get the shape of the storage
         :return: int tuple containing (rows, cols)
         """
-    @abstractmethod
+    @abc.abstractmethod
     def __getitem__(self, idx):
         pass
 
@@ -91,7 +90,7 @@ class NdArray(np.ndarray, Storage):
     @staticmethod
     def read_chunk(file) -> 'NdArray':
         rows, cols = NdArray.read_array_header(file)
-        array = file.read(calcsize("f") * rows * cols)
+        array = file.read(struct.calcsize("f") * rows * cols)
         array = np.ndarray(buffer=array, shape=(rows, cols), dtype=np.float32)
         return NdArray(array)
 
@@ -110,7 +109,7 @@ class NdArray(np.ndarray, Storage):
         """
         rows, cols = NdArray.read_array_header(file)
         offset = file.tell()
-        file.seek(rows * cols * calcsize('f'), 1)
+        file.seek(rows * cols * struct.calcsize('f'), 1)
         return NdArray(
             np.memmap(file.name,
                       dtype=np.float32,
@@ -127,9 +126,9 @@ class NdArray(np.ndarray, Storage):
         :param file:
         :return: tuple containing rows, cols
         """
-        rows, cols = struct.unpack("<QI", file.read(calcsize("<QI")))
+        rows, cols = struct.unpack("<QI", file.read(struct.calcsize("<QI")))
         type_id = ffp.io.TypeId(
-            struct.unpack("<I", file.read(calcsize("<I")))[0])
+            struct.unpack("<I", file.read(struct.calcsize("<I")))[0])
         assert type_id == ffp.io.TypeId.f32, "Expected " + str(
             ffp.io.TypeId.f32) + ", found: " + str(type_id)
         file.seek(ffp.io.pad_float(file.tell()), 1)
