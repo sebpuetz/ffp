@@ -1,7 +1,7 @@
 import contextlib
 import os
 
-import ffp.storage
+import ffp
 import numpy as np
 import pytest
 import tempfile

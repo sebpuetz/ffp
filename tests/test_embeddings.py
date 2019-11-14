@@ -3,8 +3,7 @@ import tempfile
 
 import numpy as np
 import pytest
-import ffp.embeddings
-import ffp.storage
+import ffp
 
 TEST_NORMS = [
     6.557438373565674, 8.83176040649414, 6.164413928985596, 9.165151596069336,

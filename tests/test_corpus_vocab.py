@@ -1,7 +1,6 @@
 import os
 
-import ffp.subwords
-import ffp.vocab
+import ffp
 import tempfile
 
 

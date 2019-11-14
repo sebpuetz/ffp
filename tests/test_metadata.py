@@ -3,7 +3,7 @@ import tempfile
 
 import pytest
 
-import ffp.metadata
+import ffp
 
 
 def test_read_metadata(tests_root):
