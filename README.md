@@ -1,6 +1,6 @@
 # ffp
 
-Interface to [finalfusion](https://finalfusion.github.io) written in (almost) pure Python. `ffp` supports reading from various embedding formats more liberal construction of embeddings from components. 
+Interface to [finalfusion](https://finalfusion.github.io) written in (almost) pure Python. `ffp` supports reading from various embedding formats and more liberal construction of embeddings from components compared to the other `finalfusion` interfaces. 
 
 This is an early version of `ffp`, feedback is very much appreciated!
 
@@ -24,6 +24,24 @@ Currently supported Chunks:
 * Norms
 
 ## How to...
+
+* ...install:
+
+For now, a compatible nightly Rust toolchain (e.g. `nightly-2019-07-19-x86_64-unknown-linux-gnu`) is required:
+~~~Bash
+# if Rust is not installed
+curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly-2019-07-19-x86_64-unknown-linux-gnu
+# if Rust is installed
+rustup override set nightly-2019-07-19-x86_64-unknown-linux-gnu
+~~~
+
+`ffp` can then be installed through:
+
+~~~Bash
+git clone https://github.com/sebpuetz/ffp
+cd ffp
+python setup.py install
+~~~
 
 * ...read embeddings from a file in finalfusion format and query for an embedding:
 ~~~Python
