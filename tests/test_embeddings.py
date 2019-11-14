@@ -153,3 +153,21 @@ def test_embeddings(embeddings_fifu, embeddings_text, embeddings_text_dims,
             embeddings_w2v[embedding[0]]), "FiFu and w2v embedding mismatch"
         assert np.allclose(embedding[1],
                            storage_row), "FiFu and storage row  mismatch"
+
+
+def test_buckets_to_explicit(bucket_vocab_embeddings_fifu):
+    explicit = bucket_vocab_embeddings_fifu.bucket_to_explicit()
+    assert bucket_vocab_embeddings_fifu.vocab.words == explicit.vocab.words
+    for e1, e2 in zip(bucket_vocab_embeddings_fifu, explicit):
+        assert e1[0] == e1[0]
+        assert np.allclose(e1[1], e2[1])
+    assert bucket_vocab_embeddings_fifu.vocab.idx_bound == 1024 + len(
+        bucket_vocab_embeddings_fifu.vocab)
+    assert explicit.vocab.idx_bound == len(
+        bucket_vocab_embeddings_fifu.vocab) + 16
+    bucket_indexer = bucket_vocab_embeddings_fifu.vocab.indexer
+    explicit_indexer = explicit.vocab.indexer
+    for ngram in explicit_indexer:
+        assert np.allclose(
+            bucket_vocab_embeddings_fifu.storage[2 + bucket_indexer(ngram)],
+            explicit.storage[2 + explicit_indexer(ngram)])

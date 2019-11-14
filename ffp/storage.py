@@ -44,6 +44,9 @@ class Storage(ffp.io.Chunk):
         Get the shape of the storage
         :return: int tuple containing (rows, cols)
         """
+    @abc.abstractmethod
+    def __getitem__(self, key):
+        pass
 
 
 class NdArray(np.ndarray, Storage):
@@ -53,9 +56,8 @@ class NdArray(np.ndarray, Storage):
     Wraps an numpy matrix, either in-memory or memory-mapped.
     """
     def __new__(cls, array: np.ndarray):
-        assert array.ndim == 2, "storage needs to be a matrix"
-        if array.dtype != np.float32:
-            raise TypeError("2-d float array expected")
+        if array.dtype != np.float32 or array.ndim != 2:
+            raise TypeError("expected 2-d float32 array")
         obj = array.view(cls)
         return obj
 

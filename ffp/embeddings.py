@@ -162,6 +162,30 @@ class Embeddings:
         out /= norm
         return out, norm
 
+    def bucket_to_explicit(self) -> 'Embeddings':
+        """
+        Convert bucket embeddings to embeddings with explicit lookup.
+
+        Multiple embeddings can still map to the same bucket, but all buckets that are not
+        indexed by in-vocabulary ngrams are eliminated. This can have a big impact on the size of
+        the embedding matrix.
+
+        :return: Embeddings with an explicit ngram lookup.
+        """
+        if not isinstance(self.vocab, ffp.vocab.BucketVocab):
+            raise TypeError(
+                "Only bucketed embeddings can be converted to explicit.")
+        vocab = self.vocab.to_explicit()
+        if self.storage is None:
+            return Embeddings(vocab=vocab)
+        storage = np.zeros((vocab.idx_bound, self.storage.shape[1]),
+                           dtype=np.float32)
+        storage[:len(vocab)] = self.storage[:len(vocab)]
+        for ngram in vocab.indexer:
+            storage[len(vocab) + vocab.indexer(ngram)] = self.storage[
+                len(vocab) + self.vocab.indexer(ngram)]
+        return Embeddings(vocab=vocab, storage=ffp.storage.NdArray(storage))
+
     @staticmethod
     def _read_finalfusion(path: str, mmap: bool) -> 'Embeddings':
         """

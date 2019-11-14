@@ -77,7 +77,7 @@ def test_from_matrix():
     assert s.shape == matrix.shape
     with pytest.raises(AttributeError):
         _ = ffp.storage.NdArray(None)
-    with pytest.raises(AssertionError):
+    with pytest.raises(TypeError):
         _ = ffp.storage.NdArray(np.arange(0, 10, dtype=np.float32))
     with pytest.raises(TypeError):
         _ = ffp.storage.NdArray(np.tile(np.arange(0, 10), (10, 1)))
