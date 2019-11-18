@@ -26,7 +26,7 @@ class Format(Enum):
     word2vec = "word2vec"
 
 
-class Embeddings:
+class Embeddings:  # pylint: disable=too-many-instance-attributes
     """
     Embeddings class.
 
@@ -41,16 +41,29 @@ class Embeddings:
                  vocab: Optional[ffp.vocab.Vocab] = None,
                  norms: Optional[ffp.norms.Norms] = None,
                  metadata: Optional[ffp.metadata.Metadata] = None):
+        assert storage is None or isinstance(
+            storage, ffp.storage.Storage), "storage is required to be Storage"
+        assert vocab is None or isinstance(
+            vocab, ffp.vocab.Vocab), "vocab is required to be Vocab"
+        assert norms is None or isinstance(
+            norms, ffp.norms.Norms), "norms is required to be Norms"
+        assert metadata is None or isinstance(
+            metadata,
+            ffp.metadata.Metadata), "metadata is required to be Metadata"
         if vocab is not None and storage is not None:
-            assert storage.shape[0] == vocab.idx_bound
+            assert storage.shape[
+                0] == vocab.idx_bound, "Number of embeddings needs to be equal to vocab's idx_bound"
         if vocab is not None and norms is not None:
-            assert len(vocab) == len(norms)
+            assert len(vocab) == len(
+                norms), "Vocab length needs to be equal to number of norms."
         if storage is not None and norms is not None:
-            assert storage.shape[0] >= len(norms)
-        self.storage = storage
-        self.vocab = vocab
-        self.norms = norms
-        self.metadata = metadata
+            assert storage.shape[0] >= len(
+                norms
+            ), "Number of embeddings needs to be greater than or equal to number of norms."
+        self._storage = storage
+        self._vocab = vocab
+        self._norms = norms
+        self._metadata = metadata
 
     def chunks(self):
         """
@@ -58,15 +71,108 @@ class Embeddings:
         :return: ffp.io.Chunks
         """
         chunks = []
-        if self.vocab is not None:
+        if self._vocab is not None:
             chunks.append(self.vocab)
-        if self.storage is not None:
+        if self._storage is not None:
             chunks.append(self.storage)
-        if self.metadata is not None:
+        if self._metadata is not None:
             chunks.append(self.metadata)
-        if self.norms is not None:
+        if self._norms is not None:
             chunks.append(self.norms)
         return chunks
+
+    @property
+    def storage(self) -> Optional[ffp.storage.Storage]:
+        """
+        Get the storage. Returns None if no storage is set.
+        :return: Storage
+        """
+        return self._storage
+
+    @storage.setter
+    def storage(self, storage: Optional[ffp.storage.Storage]):
+        if storage is None:
+            self._storage = None
+        elif isinstance(storage, ffp.storage.Storage):
+            if self._norms is not None:
+                assert storage.shape[0] >= len(
+                    self._norms
+                ), "Number of embeddings needs to be greater than or equal to number of norms."
+            if self._vocab is not None:
+                assert storage.shape[
+                    0] == self._vocab.idx_bound,\
+                    "Number of embeddings needs to be equal to vocab's idx_bound"
+            self._storage = storage
+        else:
+            raise TypeError("Expected 'None' or 'Vocab'.")
+
+    @property
+    def vocab(self) -> Optional[ffp.vocab.Vocab]:
+        """
+        Get the vocab. Returns None if no vocab is set.
+        :return: Vocab
+        """
+        return self._vocab
+
+    @vocab.setter
+    def vocab(self, vocab: Optional[ffp.vocab.Vocab]):
+        if vocab is None:
+            self._vocab = None
+        elif isinstance(vocab, ffp.vocab.Vocab):
+            if self._norms is not None:
+                assert len(vocab) == len(
+                    self._norms
+                ), "Vocab length needs to be equal to number of norms."
+            if self._storage is not None:
+                # pylint: disable=unsubscriptable-object
+                assert self._storage.shape[
+                    0] == vocab.idx_bound, \
+                    "Vocab's idx_bound needs to be equal to number of embeddings."
+            self._vocab = vocab
+        else:
+            raise TypeError("Expected 'None' or 'Vocab'.")
+
+    @property
+    def norms(self) -> Optional[ffp.norms.Norms]:
+        """
+        Get the norms. Returns None if no norms are set.
+        :return: Norms
+        """
+        return self._norms
+
+    @norms.setter
+    def norms(self, norms: Optional[ffp.norms.Norms]):
+        if norms is None:
+            self._norms = None
+        elif isinstance(norms, ffp.norms.Norms):
+            if self._vocab is not None:
+                assert len(self._vocab) == len(
+                    norms), "Vocab and norms need to have same length"
+            if self._storage is not None:
+                # pylint: disable=unsubscriptable-object
+                assert self._storage.shape[0] >= len(
+                    norms
+                ), "Number of norms needs to be equal to or less than number of embeddings"
+            self._norms = norms
+        else:
+            raise TypeError("Expected 'None' or 'Norms'.")
+
+    @property
+    def metadata(self) -> Optional[ffp.metadata.Metadata]:
+        """
+        Get the metadata. Returns None if no metadata is set.
+        :return: Metadata
+        """
+        return self._metadata
+
+    @metadata.setter
+    def metadata(self, metadata: Optional[ffp.metadata.Metadata]):
+        if metadata is None:
+            self._metadata = None
+        elif isinstance(metadata, ffp.metadata.Metadata):
+            self._metadata = metadata
+        else:
+            raise TypeError("Expected 'None' or 'Metadata'.")
 
     @staticmethod
     def read(path: str, emb_format: Union[str, Format] = Format.finalfusion
@@ -117,8 +223,8 @@ class Embeddings:
         :param default: default value to return if no embedding was found.
         :return: the embedding
         """
-        idx = self.vocab.idx(word)
-        res = self.storage[idx]
+        idx = self._vocab.idx(word)
+        res = self._storage[idx]
         if res.ndim == 1:
             if out is not None:
                 out[:] = res
@@ -144,16 +250,16 @@ class Embeddings:
         :param default: default value to return if no embedding was found.
         :return: tuple containing the embedding and the norm
         """
-        if self.norms is None:
+        if self._norms is None:
             raise TypeError("embeddings don't contain norms chunk")
-        idx = self.vocab.idx(word)
-        res = self.storage[idx]
+        idx = self._vocab.idx(word)
+        res = self._storage[idx]
         if res.ndim == 1:
             if out is not None:
                 out[:] = res
             else:
                 out = res
-            return out, self.norms[idx]
+            return out, self._norms[idx]
         if idx is None:
             return default
 
@@ -172,18 +278,18 @@ class Embeddings:
 
         :return: Embeddings with an explicit ngram lookup.
         """
-        if not isinstance(self.vocab, ffp.vocab.BucketVocab):
+        if not isinstance(self._vocab, ffp.vocab.BucketVocab):
             raise TypeError(
                 "Only bucketed embeddings can be converted to explicit.")
-        vocab = self.vocab.to_explicit()
-        if self.storage is None:
+        vocab = self._vocab.to_explicit()
+        if self._storage is None:
             return Embeddings(vocab=vocab)
-        storage = np.zeros((vocab.idx_bound, self.storage.shape[1]),
+        storage = np.zeros((vocab.idx_bound, self._storage.shape[1]),
                            dtype=np.float32)
-        storage[:len(vocab)] = self.storage[:len(vocab)]
+        storage[:len(vocab)] = self._storage[:len(vocab)]
         for ngram in vocab.indexer:
-            storage[len(vocab) + vocab.indexer(ngram)] = self.storage[
-                len(vocab) + self.vocab.indexer(ngram)]
+            storage[len(vocab) + vocab.indexer(ngram)] = self._storage[
+                len(vocab) + self._vocab.indexer(ngram)]
         return Embeddings(vocab=vocab, storage=ffp.storage.NdArray(storage))
 
     @staticmethod
@@ -305,23 +411,23 @@ class Embeddings:
                           vocab=ffp.vocab.SimpleVocab(words))
 
     def __getitem__(self, item):
-        idx = self.vocab[item]
-        res = self.storage[idx]
+        idx = self._vocab[item]
+        res = self._storage[idx]
         if res.ndim == 1:
             return res
         embed_sum = res.sum(axis=0)
         return embed_sum / np.linalg.norm(embed_sum)
 
     def __contains__(self, item):
-        if self.vocab is None:
+        if self._vocab is None:
             raise TypeError("These embeddings don't contain a vocabulary")
-        return item in self.vocab
+        return item in self._vocab
 
     def __repr__(self):
         return "Embeddings { \n" + "\n".join(
             [repr(chunk) for chunk in self.chunks()]) + "\n}"
 
     def __iter__(self):
-        if self.norms is not None:
-            return zip(self.vocab.words, self.storage, self.norms)
-        return zip(self.vocab.words, self.storage)
+        if self._norms is not None:
+            return zip(self._vocab.words, self._storage, self._norms)
+        return zip(self._vocab.words, self._storage)
