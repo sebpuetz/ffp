@@ -80,8 +80,8 @@ class NdArray(np.ndarray, Storage):
     @staticmethod
     def read_chunk(file) -> 'NdArray':
         rows, cols = NdArray._read_array_header(file)
-        array = file.read(struct.calcsize("f") * rows * cols)
-        array = np.ndarray(buffer=array, shape=(rows, cols), dtype=np.float32)
+        array = np.fromfile(file=file, count=rows * cols, dtype=np.float32)
+        array = np.reshape(array, (rows, cols))
         return NdArray(array)
 
     @property
