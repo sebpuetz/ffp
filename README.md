@@ -30,6 +30,7 @@ Currently supported Chunks:
 ~~~Bash
 git clone https://github.com/sebpuetz/ffp
 cd ffp
+pip install cython
 python setup.py install
 ~~~
 
