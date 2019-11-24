@@ -2,14 +2,45 @@
 Finalfusion vocabularies.
 """
 import abc
+import collections
+import operator
 import struct
-from typing import List, Optional, Dict, Tuple, IO, Iterable, Any, Union
+from typing import List, Optional, Dict, Tuple, IO, Iterable, Any, Union, Counter
 
 import ffp.io
 import ffp.subwords
-from ffp.vocab_rs import count_and_sort_tokens as _count_and_sort_tokens,\
-    count_and_sort_tokens_and_ngrams as _count_and_sort_tokens_and_ngrams,\
-    MinFreq, TargetSize
+
+
+class Cutoff:  # pylint: disable=too-few-public-methods
+    """
+    Frequency Cutoff
+
+    Defines how a vocabulary is sized, if mode is 'min_freq', items with frequency lower than
+    `cutoff` are discarded. If mode is 'target_size', the number of items will be smaller than or
+    equal to `cutoff`, discarding items at the next frequency-boundary.
+    """
+    def __init__(self, cutoff: int, mode: str = "min_freq"):
+        self.cutoff = cutoff
+        self.mode = mode
+
+    @property
+    def mode(self) -> str:
+        """
+        Return the cutoff mode, one of "min_freq" or "target_size".
+        :return: The cutoff mode
+        """
+        return "min_freq" if self._min_freq else "target_size"
+
+    @mode.setter
+    def mode(self, mode: str):
+        if mode.lower() == "min_freq":
+            self._min_freq = True
+        elif mode.lower() == "target_size":
+            self._min_freq = False
+        else:
+            raise ValueError(
+                "Unknown cutoff mode, expected 'min_freq' or 'target_size' but got: "
+                + mode)
 
 
 class Vocab(ffp.io.Chunk):
@@ -163,6 +194,46 @@ class Vocab(ffp.io.Chunk):
                 item_index[word] = len(item_index)
         return items, item_index
 
+    @staticmethod
+    def _count_words(filename) -> Counter:
+        cnt = collections.Counter()
+        with open(filename) as inf:
+            for line in inf:
+                for word in line.strip().split():
+                    cnt[word] += 1
+        return cnt
+
+    @staticmethod
+    def _filter_and_sort(cnt: Counter, cutoff: Cutoff):
+        cutoff_v = cutoff.cutoff
+
+        def cmp(tup):
+            return tup[1] >= cutoff_v
+
+        if cutoff.mode == "min_freq":
+            items = sorted(filter(cmp, cnt.items()),
+                           key=operator.itemgetter(1, 0),
+                           reverse=True)
+            if not items:
+                return [], []
+            keys, cnt = zip(*items)
+        else:
+            keys, cnt = zip(*sorted(
+                cnt.items(), key=operator.itemgetter(1, 0), reverse=True))
+            if cutoff_v == 0:
+                return [], []
+            # cutoff is size, but used as idx
+            cutoff_v -= 1
+            if cutoff_v <= len(cnt) - 2:
+                cnt_at_target = cnt[cutoff_v]
+                cnt_after_target = cnt[cutoff_v + 1]
+                if cnt_at_target == cnt_after_target:
+                    while cutoff_v > 0 and cnt[cutoff_v] == cnt_after_target:
+                        cutoff_v -= 1
+            keys = keys[:cutoff_v + 1]
+            cnt = cnt[:cutoff_v + 1]
+        return list(keys), list(cnt)
+
 
 class SubwordVocab(Vocab):
     """
@@ -172,11 +243,9 @@ class SubwordVocab(Vocab):
                  words,
                  indexer: Union[ffp.subwords.FinalfusionHashIndexer, ffp.
                                 subwords.FastTextIndexer],
-                 ngram_range: Tuple[int, int] = (3, 6),
                  index: Optional[Dict[str, int]] = None):
         super().__init__(words, index)
         self._indexer = indexer
-        self._min_n, self._max_n = ngram_range
 
     def idx(self, item, default=None):
         idx = self.word_index.get(item)
@@ -209,7 +278,7 @@ class SubwordVocab(Vocab):
         Get the lower bound of the range of extracted n-grams.
         :return: lower bound of n-gram range.
         """
-        return self._min_n
+        return self.indexer.min_n
 
     @property
     def max_n(self) -> int:
@@ -217,7 +286,7 @@ class SubwordVocab(Vocab):
         Get the upper bound of the range of extracted n-grams.
         :return: upper bound of n-gram range.
         """
-        return self._max_n
+        return self.indexer.max_n
 
     @property
     def indexer(
@@ -250,8 +319,6 @@ class SubwordVocab(Vocab):
         :return: A list of indices
         """
         return self.indexer.subword_indices(item,
-                                            min_n=self.min_n,
-                                            max_n=self.max_n,
                                             offset=len(self.words),
                                             bracket=bracket)
 
@@ -311,9 +378,10 @@ class BucketVocab(SubwordVocab):
                     if idx not in idx_index:
                         idx_index[idx] = len(idx_index)
                     ngram_index[ngram] = idx_index[idx]
-        indexer = ffp.subwords.ExplicitIndexer(ngrams, ngram_index)
-        return ExplicitVocab(self.words, indexer, (self.min_n, self.max_n),
-                             self.word_index)
+        indexer = ffp.subwords.ExplicitIndexer(ngrams,
+                                               (self.min_n, self.max_n),
+                                               ngram_index)
+        return ExplicitVocab(self.words, indexer, self.word_index)
 
     @staticmethod
     def chunk_identifier() -> ffp.io.ChunkIdentifier:
@@ -353,14 +421,10 @@ class FinalfusionBucketVocab(BucketVocab):
     """
     Finalfusion Bucket Vocabulary.
     """
-    def __init__(self,
-                 words,
-                 indexer=None,
-                 ngram_range: Tuple[int, int] = (3, 6),
-                 index=None):
+    def __init__(self, words, indexer=None, index=None):
         if indexer is None:
             indexer = ffp.subwords.FinalfusionHashIndexer(21)
-        super().__init__(words, indexer, ngram_range, index)
+        super().__init__(words, indexer, index)
 
     @staticmethod
     def read(filename):
@@ -373,31 +437,31 @@ class FinalfusionBucketVocab(BucketVocab):
     @staticmethod
     def from_corpus(
             filename,
-            cutoff=MinFreq(30),
+            cutoff=Cutoff(30, mode='min_freq'),
             indexer: Optional[ffp.subwords.FinalfusionHashIndexer] = None,
-            ngram_range: Tuple[int, int] = (3, 6)
     ) -> Tuple['ffp.subwords.FinalfusionBucketVocab', List[int]]:
         """
         Construct a Finalfusion Bucket Vocabulary from the given corpus.
-        :param filename: corpus
-        :param cutoff:
-        :param indexer:
-        :param ngram_range:
-        :return:
+        :param filename: file containing white-space seperated tokens.
+        :param cutoff: set the number of tokens in the vocabulary, either as a frequency
+        cutoff or as a target size
+        :param indexer: Indexer to be used
+        :param ngram_range: bounds of extracted n-gram range
+        :return: Tuple containing FinalfusionBucketVocab and in-vocab token counts
         """
         assert isinstance(
             indexer, ffp.subwords.FinalfusionHashIndexer) or indexer is None
-        words, counts = _count_and_sort_tokens(filename, cutoff)
-        return FinalfusionBucketVocab(words, indexer, ngram_range), counts
+        cnt = FinalfusionBucketVocab._count_words(filename)
+        words, counts = FinalfusionBucketVocab._filter_and_sort(cnt, cutoff)
+        return FinalfusionBucketVocab(words, indexer), counts
 
     @staticmethod
     def read_chunk(file) -> 'FinalfusionBucketVocab':
         length, min_n, max_n, buckets = struct.unpack(
             "<QIII", file.read(struct.calcsize("<QIII")))
         words, index = FinalfusionBucketVocab._read_items(file, length)
-        ngram_range = (min_n, max_n)
-        indexer = ffp.subwords.FinalfusionHashIndexer(buckets)
-        return FinalfusionBucketVocab(words, indexer, ngram_range, index)
+        indexer = ffp.subwords.FinalfusionHashIndexer(buckets, min_n, max_n)
+        return FinalfusionBucketVocab(words, indexer, index)
 
     @staticmethod
     def chunk_identifier():
@@ -408,14 +472,10 @@ class FastTextVocab(BucketVocab):
     """
     FastText vocabulary
     """
-    def __init__(self,
-                 words,
-                 indexer=None,
-                 ngram_range: Tuple[int, int] = (3, 6),
-                 index=None):
+    def __init__(self, words, indexer=None, index=None):
         if indexer is None:
             indexer = ffp.subwords.FastTextIndexer(2000000)
-        super().__init__(words, indexer, ngram_range, index)
+        super().__init__(words, indexer, index)
 
     @staticmethod
     def read(filename):
@@ -426,33 +486,33 @@ class FastTextVocab(BucketVocab):
         return vocab
 
     @staticmethod
-    def from_corpus(filename,
-                    cutoff=MinFreq(30),
-                    indexer: Optional[ffp.subwords.FastTextIndexer] = None,
-                    ngram_range: Tuple[int, int] = (3, 6)
-                    ) -> Tuple['FastTextVocab', List[int]]:
+    def from_corpus(
+            filename,
+            cutoff: Cutoff = Cutoff(30, mode='min_freq'),
+            indexer: Optional[ffp.subwords.FastTextIndexer] = None,
+    ) -> Tuple['FastTextVocab', List[int]]:
         """
         Construct a fastText vocabulary from the given corpus.
-        :param filename:
-        :param cutoff:
-        :param indexer:
-        :param min_n:
-        :param max_n:
-        :return:
+        :param filename: file containing white-space seperated tokens.
+        :param cutoff: set the number of tokens in the vocabulary, either as a frequency
+        cutoff or as a target size
+        :param indexer: Indexer to be used
+        :param ngram_range: bounds of extracted n-gram range
+        :return: Tuple containing FastTextVocab and in-vocab token counts
         """
         assert isinstance(indexer,
                           ffp.subwords.FastTextIndexer) or indexer is None
-        words, counts = _count_and_sort_tokens(filename, cutoff)
-        return FastTextVocab(words, indexer, ngram_range), counts
+        cnt = FastTextVocab._count_words(filename)
+        words, counts = FastTextVocab._filter_and_sort(cnt, cutoff)
+        return FastTextVocab(words, indexer), counts
 
     @staticmethod
     def read_chunk(file) -> 'FastTextVocab':
         length, min_n, max_n, buckets = struct.unpack(
             "<QIII", file.read(struct.calcsize("<QIII")))
         words, index = FastTextVocab._read_items(file, length)
-        ngram_range = (min_n, max_n)
-        indexer = ffp.subwords.FastTextIndexer(buckets)
-        return FastTextVocab(words, indexer, ngram_range, index)
+        indexer = ffp.subwords.FastTextIndexer(buckets, min_n, max_n)
+        return FastTextVocab(words, indexer, index)
 
     @staticmethod
     def chunk_identifier():
@@ -463,13 +523,9 @@ class ExplicitVocab(SubwordVocab):
     """
     A vocabulary with explicitly stored n-grams.
     """
-    def __init__(self,
-                 words,
-                 indexer,
-                 ngram_range: Tuple[int, int] = (3, 6),
-                 index=None):
+    def __init__(self, words, indexer, index=None):
         assert isinstance(indexer, ffp.subwords.ExplicitIndexer)
-        super().__init__(words, indexer, ngram_range, index)
+        super().__init__(words, indexer, index)
 
     @staticmethod
     def read(filename) -> 'ExplicitVocab':
@@ -480,14 +536,13 @@ class ExplicitVocab(SubwordVocab):
         return vocab
 
     @staticmethod
-    def from_corpus(corpus,
-                    ngram_range: Tuple[int, int] = (3, 6),
-                    token_cutoff: Union[MinFreq, TargetSize] = MinFreq(30),
-                    ngram_cutoff: Union[MinFreq, TargetSize] = MinFreq(30)
-                    ) -> Tuple['ExplicitVocab', List[int], List[int]]:
+    def from_corpus(filename,
+                    ngram_range=(3, 6),
+                    token_cutoff: Cutoff = Cutoff(30, mode='min_freq'),
+                    ngram_cutoff: Cutoff = Cutoff(30, mode='min_freq')):
         """
         Construct a explicit vocabulary from the given corpus.
-        :param corpus: file containing white-space seperated tokens.
+        :param filename: file containing white-space seperated tokens.
         :param ngram_range: bounds of extracted n-gram range
         :param token_cutoff: set the number of tokens in the vocabulary, either as a frequency
         cutoff or as a target size
@@ -496,26 +551,20 @@ class ExplicitVocab(SubwordVocab):
         :return: a tuple containing the vocabulary, token counts and n-gram counts
         """
         min_n, max_n = ngram_range
-        (words,
-         ngrams) = _count_and_sort_tokens_and_ngrams(corpus, token_cutoff,
-                                                     ngram_cutoff, min_n,
-                                                     max_n)
-        words, word_counts = words
-        ngrams, ngram_counts = ngrams
-        indexer = ffp.subwords.ExplicitIndexer(ngrams)
-        return ExplicitVocab(words, indexer,
-                             ngram_range), word_counts, ngram_counts
+        cnt = ExplicitVocab._count_words(filename)
+        ngram_cnt = collections.Counter()
+        for word, count in cnt.items():
+            for ngram in ffp.subwords.word_ngrams(word, min_n, max_n):
+                ngram_cnt[ngram] += count
+        words, tok_cnt = ExplicitVocab._filter_and_sort(cnt, token_cutoff)
+        ngrams, ngram_cnt = ExplicitVocab._filter_and_sort(
+            ngram_cnt, ngram_cutoff)
+        indexer = ffp.subwords.ExplicitIndexer(ngrams, ngram_range=ngram_range)
+        return ExplicitVocab(words, indexer), tok_cnt, ngram_cnt
 
     @property
     def indexer(self):
         return self._indexer
-
-    def subword_indices(self, item, bracket=True):
-        ngrams = self.subwords(item, bracket)
-        return [
-            idx + len(self) for idx in (self.indexer(ngram)
-                                        for ngram in ngrams) if idx is not None
-        ]
 
     @staticmethod
     def chunk_identifier():
@@ -529,8 +578,9 @@ class ExplicitVocab(SubwordVocab):
         ngrams, ngram_index = ExplicitVocab._read_items(file,
                                                         ngram_length,
                                                         indices=True)
-        indexer = ffp.subwords.ExplicitIndexer(ngrams, ngram_index)
-        return ExplicitVocab(words, indexer, (min_n, max_n), word_index)
+        indexer = ffp.subwords.ExplicitIndexer(ngrams, (min_n, max_n),
+                                               ngram_index)
+        return ExplicitVocab(words, indexer, word_index)
 
     def write_chunk(self, file) -> None:
         chunk_id = self.chunk_identifier()
@@ -572,16 +622,17 @@ class SimpleVocab(Vocab):
         return vocab
 
     @staticmethod
-    def from_corpus(filename,
-                    cutoff=MinFreq(30)) -> Tuple['SimpleVocab', List[int]]:
+    def from_corpus(filename, cutoff: Cutoff = Cutoff(30, mode="min_freq")):
         """
         Construct a simple vocabulary from the given corpus.
-        :param filename:
-        :param cutoff:
-        :return:
+        :param filename: file
+        :param cutoff: set the number of tokens in the vocabulary, either as a frequency
+        cutoff or as a target size
+        :return: Tuple containing SimpleVocab and in-vocab token counts
         """
-        words, counts = _count_and_sort_tokens(filename, cutoff)
-        return SimpleVocab(words), counts
+        cnt = SimpleVocab._count_words(filename)
+        words, cnt = SimpleVocab._filter_and_sort(cnt, cutoff)
+        return SimpleVocab(words), cnt
 
     @staticmethod
     def read_chunk(file) -> 'SimpleVocab':
@@ -607,21 +658,3 @@ class SimpleVocab(Vocab):
 
     def idx(self, item, default=None):
         return self.word_index.get(item, default)
-
-
-def min_freq(freq: int) -> MinFreq:
-    """
-    Construct new MinFreq
-    :param freq: frequency cutoff
-    :return: MinFreq
-    """
-    return MinFreq(freq)
-
-
-def target_size(size: int) -> TargetSize:
-    """
-    Construct new TargetSize
-    :param size: target size
-    :return: TargetSize
-    """
-    return TargetSize(size)

@@ -27,16 +27,6 @@ Currently supported Chunks:
 
 * ...install:
 
-For now, a compatible nightly Rust toolchain (e.g. `nightly-2019-07-19-x86_64-unknown-linux-gnu`) is required:
-~~~Bash
-# if Rust is not installed
-curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly-2019-07-19-x86_64-unknown-linux-gnu
-# if Rust is installed
-rustup override set nightly-2019-07-19-x86_64-unknown-linux-gnu
-~~~
-
-`ffp` can then be installed through:
-
 ~~~Bash
 git clone https://github.com/sebpuetz/ffp
 cd ffp

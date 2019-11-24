@@ -1,45 +1,10 @@
 """
-Interface to subwords.
-
-Provides access to the subword indexers and a method to extract ngrams from a given string.
+ExplicitIndexers store ngrams explicitly instead of using a hashing trick.
 """
 
-from typing import List, Dict, Optional, Iterable
+from typing import List, Dict, Optional, Iterable, Tuple
 
-from ffp.vocab_rs import FastTextIndexer, FinalfusionHashIndexer, \
-    word_ngrams as _word_ngrams
-
-
-def word_ngrams(word, min_n=3, max_n=6, bracket=True) -> List[str]:
-    """
-    Get the ngrams for the given word.
-    :param word: word
-    :param min_n: lower bound of n-gram range
-    :param max_n: upper bound of n-gram range
-    :param bracket: whether to bracket the word
-    :return: list of n-grams
-    """
-    return _word_ngrams(word, min_n, max_n, bracket)
-
-
-def finalfusion_bucketindexer(bucket_exp: 21) -> FinalfusionHashIndexer:
-    """
-    Returns a new FinalfusionHashIndexer
-    :param bucket_exp: pow(2, bucket_exp) defines the number of buckets
-    :return: FinalfusionHashIndexer
-    """
-    if bucket_exp > 64:
-        raise ValueError("Bucket exponent needs to be smaller than 64")
-    return FinalfusionHashIndexer(bucket_exp)
-
-
-def fasttext_indexer(n_buckets: 2000000):
-    """
-    Returns a new fastText hash indexer
-    :param n_buckets: defines the number of buckets.
-    :return: FinalfusionHashIndexer
-    """
-    return FastTextIndexer(n_buckets)
+from .ngrams import word_ngrams
 
 
 class ExplicitIndexer:
@@ -48,8 +13,10 @@ class ExplicitIndexer:
     """
     def __init__(self,
                  ngrams: List[str],
+                 ngram_range: Tuple[int, int] = (3, 6),
                  ngram_index: Optional[Dict[str, int]] = None):
         self._ngrams = ngrams
+        self.min_n, self.max_n = ngram_range
         if ngram_index is None:
             ngram_index = dict(
                 (ngram, idx) for idx, ngram in enumerate(ngrams))
@@ -83,6 +50,27 @@ class ExplicitIndexer:
         :return:
         """
         return self._bound
+
+    def subword_indices(self, word, offset=0, bracket=True, with_ngrams=False):
+        """
+        Get the subword indices for the given word.
+
+        :param word: the word
+        :param offset: is added to each index
+        :param bracket: whether to bracket the word with '<' and '>'
+        :param with_ngrams: whether to return the indices with corresponding ngrams
+        :return: List of subword indices, obtionally as tuples with ngrams
+        """
+        w_ngrams = word_ngrams(word, bracket)
+        if with_ngrams:
+            return [(ngram, idx + offset)
+                    for ngram, idx in ((ngram, self._ngram_index.get(ngram))
+                                       for ngram in w_ngrams)
+                    if idx is not None]
+        return [
+            idx + offset for idx in (self._ngram_index.get(ngram)
+                                     for ngram in w_ngrams) if idx is not None
+        ]
 
     def __call__(self, ngram: str) -> Optional[int]:
         return self.ngram_index.get(ngram)

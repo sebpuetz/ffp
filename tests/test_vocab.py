@@ -138,23 +138,21 @@ def test_ngrams():
     assert ffp.subwords.word_ngrams("Test",
                                     min_n=5) == ["<Test>", "<Test", "Test>"]
     with pytest.raises(TypeError):
-        _ = ffp.subwords.word_ngrams(None)
-    with pytest.raises(TypeError):
         _ = ffp.subwords.word_ngrams(2)
     with pytest.raises(TypeError):
         _ = ffp.subwords.word_ngrams("Test", "not an int")
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         _ = ffp.subwords.word_ngrams("Test", 7)
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         _ = ffp.subwords.word_ngrams("Test", 0)
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         _ = ffp.subwords.word_ngrams("Test", 3, 0)
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         _ = ffp.subwords.word_ngrams("Test", 0, 0)
 
 
 def test_subword_indices(tests_root):
-    v = ffp.vocab.Vocab.read(
+    v = ffp.vocab.SubwordVocab.read(
         os.path.join(tests_root, "data", "ff_buckets.fifu"))
     tuebingen_buckets = [
         14, 69, 74, 124, 168, 181, 197, 246, 250, 276, 300, 308, 325, 416, 549,

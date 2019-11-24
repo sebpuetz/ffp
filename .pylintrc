@@ -1,2 +1,2 @@
 [TYPECHECK]
-ignored-modules = ffp.vocab_rs
+extension-pkg-whitelist=ffp.subwords.ngrams, ffp.subwords.hash_indexers
