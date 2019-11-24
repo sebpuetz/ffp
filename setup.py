@@ -17,13 +17,20 @@ else:
 NAME = 'ffp'
 setup(
     name=NAME,
-    version=0.1,
+    version="0.1.0",
     author="Sebastian Pütz",
     author_email="sebastian.puetz@uni-tuebingen.de",
+    classifiers=(
+        "Programming Language :: Python :: 3",
+        "Operating System :: OS Independent",
+        "Topic :: Text Processing :: Linguistic",
+    ),
+    description="Interface to finalfusion embeddings",
     ext_modules=extensions,
     license='BlueOak-1.0.0',
     packages=find_packages(),
     install_requires=["numpy", "toml"],
     include_package_data=True,
     package_data={'': ['*.pyx']},
+    url="https://github.com/sebpuetz/ffp"
 )
