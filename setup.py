@@ -1,12 +1,16 @@
+import os
+
 from setuptools import find_packages
 from setuptools import setup
 from distutils.extension import Extension
 
-try:
+need_cython = not all([os.path.exists(p) for p in ["ffp/subwords/hash_indexers.c", "ffp/subwords/ngrams.c"]])
+
+if need_cython:
     from Cython.Build import cythonize
     extensions = cythonize([Extension("ffp.subwords.hash_indexers", ["ffp/subwords/hash_indexers.pyx"]),
                             Extension("ffp.subwords.ngrams", ["ffp/subwords/ngrams.pyx"])])
-except ImportError:
+else:
     extensions = [Extension("ffp.subwords.hash_indexers", ["ffp/subwords/hash_indexers.c"]),
                   Extension("ffp.subwords.ngrams", ["ffp/subwords/ngrams.c"])]
 
