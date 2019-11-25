@@ -26,13 +26,17 @@ Currently supported Chunks:
 ## How to...
 
 * ...install:
-
-~~~Bash
-git clone https://github.com/sebpuetz/ffp
-cd ffp
-pip install cython
-python setup.py install
-~~~
+   - from pypi:
+    ~~~Bash
+    pip install ffp
+    ~~~
+   - from source:
+    ~~~Bash
+    git clone https://github.com/sebpuetz/ffp
+    cd ffp
+    pip install cython
+    python setup.py install
+    ~~~
 
 * ...read embeddings from a file in finalfusion format and query for an embedding:
 ~~~Python
