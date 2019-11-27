@@ -65,9 +65,9 @@ vocab = ffp.vocab.Vocab.read("path/to/file.fifu")
 import ffp
 
 # discard all ngrams appearing less than 30 times in the corpus
-ngram_cutoff = ffp.vocab.min_freq(30)
+ngram_cutoff = ffp.vocab.Cutoff(30, "min_freq")
 # keep less than 500,000 tokens in the vocabulary, setting the cutoff at the next frequency boundary
-token_cutoff = ffp.vocab.target_size(500000)
+token_cutoff = ffp.vocab.Cutoff(500000, "target_size")
 # extract ngrams in range 3 to 6 (including 6)
 ngram_range = (3, 6)
 vocab, token_counts, ngram_counts = ffp.vocab.ExplicitVocab.from_corpus("whitespace-tokenized-corpus.txt", ngram_range, token_cutoff, ngram_cutoff)
@@ -80,7 +80,7 @@ import ffp
 import numpy as np
 
 # keep less than 500,000 tokens in the vocabulary, setting the cutoff at the next frequency boundary
-token_cutoff = ffp.vocab.target_size(500000)
+token_cutoff = ffp.vocab.Cutoff(500000, "target_size")
 vocab, _ = ffp.vocab.SimpleVocab.from_corpus("whitespace-tokenized-corpus.txt", token_cutoff)
 rand_matrix = np.float32(np.random.rand(vocab.idx_bound, 300))
 storage = ffp.storage.NdArray(rand_matrix)
