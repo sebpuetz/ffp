@@ -1,7 +1,15 @@
 # cython: language_level=3
 # cython: embedsignature=True
+cimport cython
+from cpython cimport array
 
 from libc.stdint cimport int8_t, uint8_t, uint32_t, uint64_t, UINT32_MAX
+
+# subword_indices methods could be optimized by calculating the number of ngrams and preallocating an array.array:
+# cdef size_t n_ngrams = <size_t> (0.5 * (-1. + min_n - max_n)*(min_n + max_n - 2. * (1. + length)) )
+# cdef array.array result = array.array('Q')
+# array.resize(result, n_ngrams)
+# downside of this is returning an array in place of list. Speedup ~30%
 
 cdef class FinalfusionHashIndexer:
     """
@@ -21,7 +29,7 @@ cdef class FinalfusionHashIndexer:
         self.mask = ((1 << bucket_exp) - 1)
 
     def __call__(self, str ngram):
-        return fifu_hash_ngram(ngram, len(ngram)) & self.mask
+        return fifu_hash_ngram(ngram, 0, len(ngram)) & self.mask
 
     @property
     def idx_bound(self) -> int:
@@ -35,28 +43,26 @@ cdef class FinalfusionHashIndexer:
         :param offset: is added to each index
         :param bracket: whether to bracket the word with '<' and '>'
         :param with_ngrams: whether to return the indices with corresponding ngrams
-        :return: List of subword indices, obtionally as tuples with ngrams
+        :return: List of subword indices, optionally as tuples with ngrams
         """
         if bracket:
             word = "<%s>" % word
         cdef uint32_t j
-        cdef size_t length = len(word)
-        cdef size_t i = 0
-        cdef str ngram
+        cdef Py_ssize_t length = len(word)
+        cdef Py_ssize_t i
         cdef uint64_t h
-        cdef uint32_t max_n = self.max_n
-        ngrams = []
+        cdef list ngrams = []
         if length < self.min_n:
             return ngrams
-        if length < max_n:
-            max_n = length
+        cdef uint32_t max_n = min(length, self.max_n)
+        # iterate over starting points
         for i in range(length + 1 - self.min_n):
-            for j in range(max_n, self.min_n-1, -1):
+            # iterate over ngram lengths, long to short
+            for j in range(max_n, self.min_n - 1, -1):
                 if j + i <= length:
-                    ngram = word[i:i + j]
-                    h = (fifu_hash_ngram(ngram, j) & self.mask) + offset
+                    h = (fifu_hash_ngram(word, i, j) & self.mask) + offset
                     if with_ngrams:
-                        ngrams.append((ngram, h))
+                        ngrams.append((h, word[i:i + j]))
                     else:
                         ngrams.append(h)
         return ngrams
@@ -77,8 +83,10 @@ cdef class FastTextIndexer:
         self.n_buckets = n_buckets
 
     def __call__(self, str ngram):
-        return ft_hash_ngram(ngram) % self.n_buckets
+        cdef bytes b_ngram = ngram.encode("utf8")
+        return ft_hash_ngram(b_ngram, 0, len(b_ngram)) % self.n_buckets
 
+    @cython.cdivision(True)
     cpdef subword_indices(self,
                           str word,
                           uint64_t offset=0,
@@ -91,72 +99,88 @@ cdef class FastTextIndexer:
         :param offset: is added to each index
         :param bracket: whether to bracket the word with '<' and '>'
         :param with_ngrams: whether to return the indices with corresponding ngrams
-        :return: List of subword indices, obtionally as tuples with ngrams
+        :return: List of subword indices, optionally as tuples with ngrams
         """
+        cdef unsigned int start, end
+        cdef Py_ssize_t i, j
+        cdef uint64_t h
         if bracket:
             word = "<%s>" % word
-        cdef uint32_t j
-        cdef size_t length = len(word)
-        cdef size_t i = 0
-        cdef str ngram
-        cdef uint64_t h
-        cdef uint32_t max_n = self.max_n
-        ngrams = []
-        if length < self.min_n:
-            return ngrams
-        if length < self.max_n:
-            max_n = length
+        cdef bytes b_word = word.encode("utf-8")
+        cdef const unsigned char* b_word_view = b_word
+        cdef Py_ssize_t length = len(word)
+        cdef uint32_t max_n = min(self.max_n, length)
+        cdef array.array offsets = find_utf8_boundaries(b_word_view, len(b_word))
+        cdef list ngrams = []
+        # iterate over starting points by character
         for i in range(length + 1 - self.min_n):
-            for j in range(max_n, self.min_n-1, -1):
-                if j + i > length:
-                    continue
-                ngram = word[i:i + j]
-                h = (ft_hash_ngram(ngram) % self.n_buckets) + offset
-                if with_ngrams:
-                    ngrams.append((ngram, h))
-                else:
-                    ngrams.append(h)
+            # offsets[i] corresponds to the byte offset to the start of the char at word[i]
+            start = offsets.data.as_uints[i]
+            # iterate over ngram lengths, long to short
+            for j in range(max_n, self.min_n - 1, -1):
+                if j + i <= length:
+                    # offsets[i+j] holds the exclusive upper bounds of the bytes for the character word[i+j-1]
+                    end = offsets.data.as_uints[i + j]
+                    h = ft_hash_ngram(b_word_view, start, end) % self.n_buckets + offset
+                    if with_ngrams:
+                        ngrams.append((h, word[i:i + j]))
+                    else:
+                        ngrams.append(h)
         return ngrams
 
     @property
     def idx_bound(self) -> int:
         return self.n_buckets
 
+@cython.boundscheck(False)
+cdef array.array find_utf8_boundaries(const unsigned char* w, const Py_ssize_t n_bytes):
+    cdef Py_ssize_t b
+    cdef Py_ssize_t i = 0
+    cdef array.array offsets = array.array('I')
+    # n_bytes + 1 to store n_bytes as final boundary
+    array.resize(offsets, n_bytes + 1)
+    for b in range(n_bytes):
+        # byte w[b] is not a continuation byte, therefore beginning of char; store offset
+        if (w[b] & 0xC0) != 0x80:
+            offsets.data.as_uints[i] = b
+            i += 1
+    offsets.data.as_uints[i] = <unsigned int> n_bytes
+    return offsets
+
 cdef uint64_t SEED64 = 0xcbf29ce484222325
 cdef uint64_t PRIME64 = 0x100000001b3
 cdef uint32_t SEED32 = 2166136261
 cdef uint32_t PRIME32 = 16777619
 
-cdef uint64_t fifu_hash_ngram(str ngram, const size_t n_chars):
-    cdef uint32_t i = 0
+@cython.boundscheck(False)
+cdef uint64_t fifu_hash_ngram(str word, const Py_ssize_t start, const Py_ssize_t length):
+    cdef uint32_t c
+    cdef Py_ssize_t i = 0
     cdef uint64_t h = SEED64
-    cdef uint64_t c
 
-    h = fnv64(<uint8_t*> &n_chars, 8, h=h)
-    for i in range(n_chars):
-        c = ord(ngram[i])
+    h = fnv64(<uint8_t*> &length, 8, h=h)
+    for i in range(start, start + length):
+        # extract unicode for char, cast to u8 pointer for hashing extracting bytes manually from memoryview/bytes is
+        # more complex because of handling prefixes.
+        c = ord(word[i])
         h = fnv64(<uint8_t*> &c, 4, h=h)
-        i += 1
     return h
 
-cdef uint64_t fnv64(const uint8_t*data,
-                    const uint32_t n_bytes,
+cdef uint64_t fnv64(const uint8_t* data,
+                    const Py_ssize_t n_bytes,
                     uint64_t h):
-    cdef uint32_t i = 0
+    cdef Py_ssize_t i = 0
     for i in range(n_bytes):
         h ^= <uint32_t> (<uint8_t> data[i])
         h *= PRIME64
         i += 1
     return h
 
-cdef uint64_t ft_hash_ngram(str ngram):
-    cdef bytes utf8_ngram = ngram.encode("utf-8")
-    cdef uint32_t n_bytes = len(utf8_ngram)
-    cdef const unsigned char*b_ngram = utf8_ngram
-    cdef uint32_t i = 0
+cdef uint64_t ft_hash_ngram(const unsigned char* b_word, const Py_ssize_t start, const Py_ssize_t end):
+    cdef Py_ssize_t i
     cdef uint32_t h = SEED32
-    while i < n_bytes:
-        h ^= <uint32_t> (<int8_t> utf8_ngram[i])
+    # iterate over bytes in range start..end and hash each byte
+    for i in range(start, end):
+        h ^= <uint32_t> (<int8_t> b_word[i])
         h *= PRIME32
-        i += 1
     return h

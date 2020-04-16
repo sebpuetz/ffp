@@ -28,7 +28,7 @@ jobs:
         pylint ffp
     - name: yapf
       run: |
-        pip install yapf
+        pip install yapf==0.28
         yapf ffp -r --diff
         yapf tests -r --diff
     - name: Test with pytest
