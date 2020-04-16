@@ -7,12 +7,12 @@ import tempfile
 
 def test_reading(tests_root):
     with pytest.raises(TypeError):
-        ffp.vocab.Vocab.read(None)
+        ffp.vocab.load_vocab(None)
     with pytest.raises(IOError):
-        ffp.vocab.Vocab.read(1)
+        ffp.vocab.load_vocab(1)
     with pytest.raises(IOError):
-        ffp.vocab.Vocab.read("foo")
-    v = ffp.vocab.Vocab.read(
+        ffp.vocab.load_vocab("foo")
+    v = ffp.vocab.load_vocab(
         os.path.join(tests_root, "data", "simple_vocab.fifu"))
     assert v.words[0] == "Paris"
 
@@ -27,10 +27,10 @@ def test_contains():
 def test_simple_roundtrip(tests_root):
     tmp_dir = tempfile.gettempdir()
     filename = os.path.join(tmp_dir, "write_simple.fifu")
-    v = ffp.vocab.Vocab.read(
+    v = ffp.vocab.load_vocab(
         os.path.join(tests_root, "data", "simple_vocab.fifu"))
     v.write(filename)
-    assert v == ffp.vocab.Vocab.read(filename)
+    assert v == ffp.vocab.load_vocab(filename)
 
 
 def test_simple_constructor():
@@ -88,14 +88,14 @@ def test_fasttext_constructor():
 def test_ff_buckets_roundtrip(tests_root):
     tmp_dir = tempfile.gettempdir()
     filename = os.path.join(tmp_dir, "write_ff_buckets.fifu")
-    v = ffp.vocab.Vocab.read(
+    v = ffp.vocab.load_vocab(
         os.path.join(tests_root, "data", "ff_buckets.fifu"))
     v.write(filename)
-    assert v == ffp.vocab.Vocab.read(filename)
+    assert v == ffp.vocab.load_vocab(filename)
 
 
 def test_ff_buckets_lookup(tests_root):
-    v = ffp.vocab.Vocab.read(
+    v = ffp.vocab.load_vocab(
         os.path.join(tests_root, "data", "ff_buckets.fifu"))
     assert v.words[0] == "one"
     assert v["one"] == 0
@@ -152,7 +152,7 @@ def test_ngrams():
 
 
 def test_subword_indices(tests_root):
-    v = ffp.vocab.SubwordVocab.read(
+    v = ffp.vocab.load_subword_vocab(
         os.path.join(tests_root, "data", "ff_buckets.fifu"))
     tuebingen_buckets = [
         14, 69, 74, 124, 168, 181, 197, 246, 250, 276, 300, 308, 325, 416, 549,

@@ -9,7 +9,7 @@ def test_fasttext_from_corpus_roundtrip(tests_root):
     vocab, _ = ffp.vocab.FastTextVocab.from_corpus(path)
     vocab.write(
         os.path.join(tempfile.gettempdir(), "fasttext_from_corpus.fifu"))
-    vocab2 = ffp.vocab.Vocab.read(
+    vocab2 = ffp.vocab.load_vocab(
         os.path.join(tempfile.gettempdir(), "fasttext_from_corpus.fifu"))
     assert vocab == vocab2
 
@@ -105,7 +105,7 @@ def test_simple_from_corpus_roundtrip(tests_root):
     vocab, _ = ffp.vocab.SimpleVocab.from_corpus(path, cutoff)
     vocab.write(
         os.path.join(tempfile.gettempdir(), "explicit_from_corpus.fifu"))
-    vocab2 = ffp.vocab.Vocab.read(
+    vocab2 = ffp.vocab.load_vocab(
         os.path.join(tempfile.gettempdir(), "explicit_from_corpus.fifu"))
     assert vocab == vocab2
 
@@ -181,6 +181,6 @@ def test_explicit_from_corpus_roundtrip(tests_root):
                                                       ngram_cutoff=cutoff)
     vocab.write(
         os.path.join(tempfile.gettempdir(), "explicit_from_corpus.fifu"))
-    vocab2 = ffp.vocab.Vocab.read(
+    vocab2 = ffp.vocab.load_vocab(
         os.path.join(tempfile.gettempdir(), "explicit_from_corpus.fifu"))
     assert vocab == vocab2

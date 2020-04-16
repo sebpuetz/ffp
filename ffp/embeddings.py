@@ -174,30 +174,6 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         else:
             raise TypeError("Expected 'None' or 'Metadata'.")
 
-    @staticmethod
-    def read(path: str, emb_format: Union[str, Format] = Format.finalfusion
-             ) -> 'Embeddings':
-        """
-        Read embeddings.
-        :param emb_format: the embeddings format, one of finalfusion, finalfusion_mmap, text,
-        textdims and word2vec
-        :param path: file
-        :return: Embeddings
-        """
-        if isinstance(emb_format, str):
-            emb_format = Format(emb_format)
-        if emb_format == Format.finalfusion:
-            return Embeddings._read_finalfusion(path, False)
-        if emb_format == Format.finalfusion_mmap:
-            return Embeddings._read_finalfusion(path, True)
-        if emb_format == Format.text:
-            return Embeddings._read_text(path)
-        if emb_format == Format.textdims:
-            return Embeddings._read_textdims(path)
-        if emb_format == Format.word2vec:
-            return Embeddings._read_word2vec(path)
-        raise TypeError("Unknown format")
-
     def write(self, path: str):
         """
         Write the Embeddings in finalfusion format to the given path.
@@ -292,124 +268,6 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
                 len(vocab) + self._vocab.indexer(ngram)]
         return Embeddings(vocab=vocab, storage=ffp.storage.NdArray(storage))
 
-    @staticmethod
-    def _read_finalfusion(path: str, mmap: bool) -> 'Embeddings':
-        """
-        Read embeddings from a file in finalfusion format.
-        :param path: path
-        :param mmap: whether to mmap the storage
-        :return: Embeddings
-        """
-        with open(path, 'rb') as file:
-            _ = ffp.io.Header.read_chunk(file)
-            chunk_id, _ = ffp.io.read_chunk_header(file)
-            embeddings = Embeddings()
-            while True:
-                if chunk_id == ffp.io.ChunkIdentifier.NdArray:
-                    embeddings.storage = ffp.storage.NdArray.load(file, mmap)
-                elif chunk_id == ffp.io.ChunkIdentifier.SimpleVocab:
-                    embeddings.vocab = ffp.vocab.SimpleVocab.read_chunk(file)
-                elif chunk_id == ffp.io.ChunkIdentifier.BucketSubwordVocab:
-                    embeddings.vocab = ffp.vocab.FinalfusionBucketVocab.read_chunk(
-                        file)
-                elif chunk_id == ffp.io.ChunkIdentifier.FastTextSubwordVocab:
-                    embeddings.vocab = ffp.vocab.FastTextVocab.read_chunk(file)
-                elif chunk_id == ffp.io.ChunkIdentifier.ExplicitSubwordVocab:
-                    embeddings.vocab = ffp.vocab.ExplicitVocab.read_chunk(file)
-                elif chunk_id == ffp.io.ChunkIdentifier.NdNorms:
-                    embeddings.norms = ffp.norms.Norms.read_chunk(file)
-                elif chunk_id == ffp.io.ChunkIdentifier.Metadata:
-                    embeddings.metadata = ffp.metadata.Metadata.read_chunk(
-                        file)
-                else:
-                    chunk_id, _ = ffp.io.read_chunk_header(file)
-                    raise IOError(str(chunk_id) + " is not yet supported.")
-                chunk_header = ffp.io.read_chunk_header(file)
-                if chunk_header is None:
-                    break
-                chunk_id, _ = chunk_header
-            return embeddings
-
-    @staticmethod
-    def _read_textdims(path):
-        """
-        Read emebddings in textdims format:
-        The first line contains whitespace separated rows and cols, the rest of the file contains
-        whitespace separated word and vector components.
-        :param path:
-        :return:
-        """
-        words = []
-        with open(path) as file:
-            rows, cols = next(file).split()
-            matrix = np.zeros((int(rows), int(cols)), dtype=np.float32)
-            for i, line in enumerate(file):
-                line = line.strip().split()
-                words.append(line[0])
-                matrix[i] = line[1:]
-        norms = np.linalg.norm(matrix, axis=1)
-        matrix /= np.expand_dims(norms, axis=1)
-        return Embeddings(storage=ffp.storage.NdArray(matrix),
-                          norms=ffp.norms.Norms(norms),
-                          vocab=ffp.vocab.SimpleVocab(words))
-
-    @staticmethod
-    def _read_text(path: str) -> 'Embeddings':
-        """
-        Read embeddings in text format:
-        Each line contains a word followed by a whitespace and a list of whitespace separated
-        values.
-        :param path: path
-        :return: Embeddings
-        """
-        words = []
-        vecs = []
-        with open(path) as file:
-            for line in file:
-                line = line.strip().split()
-                words.append(line[0])
-                vecs.append(line[1:])
-            matrix = np.array(vecs, dtype=np.float32)
-        norms = np.linalg.norm(matrix, axis=1)
-        matrix /= np.expand_dims(norms, axis=1)
-        return Embeddings(storage=ffp.storage.NdArray(matrix),
-                          norms=ffp.norms.Norms(norms),
-                          vocab=ffp.vocab.SimpleVocab(words))
-
-    @staticmethod
-    def _read_word2vec(path: str) -> 'Embeddings':
-        """
-        Read embeddings in word2vec binary format:
-        Files are expected to start with a line containing rows and cols in utf-8. Words are encoded
-        in utf-8 followed by a single whitespace. After the whitespace the embedding components are
-        expected as little-endian float32.
-        :param path: path
-        :return: Embeddings
-        """
-        words = []
-        with open(path, 'rb') as file:
-            rows, cols = map(int, file.readline().decode("utf-8").split())
-            matrix = np.zeros((rows, cols), dtype=np.float32)
-            for row in range(rows):
-                word = []
-                while True:
-                    byte = file.read(1)
-                    if byte == b' ':
-                        break
-                    if byte == b'':
-                        raise EOFError
-                    if byte != b'\n':
-                        word.append(byte)
-                word = b''.join(word).decode('utf-8')
-                words.append(word)
-                vec = file.read(cols * matrix.itemsize)
-                matrix[row] = np.frombuffer(vec, dtype=np.float32)
-        norms = np.linalg.norm(matrix, axis=1)
-        matrix /= np.expand_dims(norms, axis=1)
-        return Embeddings(storage=ffp.storage.NdArray(matrix),
-                          norms=ffp.norms.Norms(norms),
-                          vocab=ffp.vocab.SimpleVocab(words))
-
     def __getitem__(self, item):
         idx = self._vocab[item]
         res = self._storage[idx]
@@ -431,3 +289,123 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         if self._norms is not None:
             return zip(self._vocab.words, self._storage, self._norms)
         return zip(self._vocab.words, self._storage)
+
+
+def load_finalfusion(path: str, mmap: bool = False) -> 'Embeddings':
+    """
+    Read embeddings from a file in finalfusion format.
+    :param path: path
+    :param mmap: whether to mmap the storage
+    :return: Embeddings
+    """
+    with open(path, 'rb') as file:
+        _ = ffp.io.Header.read_chunk(file)
+        chunk_id, _ = ffp.io.read_chunk_header(file)
+        embeddings = Embeddings()
+        while True:
+            if chunk_id == ffp.io.ChunkIdentifier.NdArray:
+                if mmap:
+                    embeddings.storage = ffp.storage.NdArray.mmap_chunk(file)
+                else:
+                    embeddings.storage = ffp.storage.NdArray.read_chunk(file)
+            elif chunk_id == ffp.io.ChunkIdentifier.SimpleVocab:
+                embeddings.vocab = ffp.vocab.SimpleVocab.read_chunk(file)
+            elif chunk_id == ffp.io.ChunkIdentifier.BucketSubwordVocab:
+                embeddings.vocab = ffp.vocab.FinalfusionBucketVocab.read_chunk(
+                    file)
+            elif chunk_id == ffp.io.ChunkIdentifier.FastTextSubwordVocab:
+                embeddings.vocab = ffp.vocab.FastTextVocab.read_chunk(file)
+            elif chunk_id == ffp.io.ChunkIdentifier.ExplicitSubwordVocab:
+                embeddings.vocab = ffp.vocab.ExplicitVocab.read_chunk(file)
+            elif chunk_id == ffp.io.ChunkIdentifier.NdNorms:
+                embeddings.norms = ffp.norms.Norms.read_chunk(file)
+            elif chunk_id == ffp.io.ChunkIdentifier.Metadata:
+                embeddings.metadata = ffp.metadata.Metadata.read_chunk(file)
+            else:
+                chunk_id, _ = ffp.io.read_chunk_header(file)
+                raise IOError(str(chunk_id) + " is not yet supported.")
+            chunk_header = ffp.io.read_chunk_header(file)
+            if chunk_header is None:
+                break
+            chunk_id, _ = chunk_header
+        return embeddings
+
+
+def load_word2vec(path: str) -> 'Embeddings':
+    """
+    Read embeddings in word2vec binary format:
+    Files are expected to start with a line containing rows and cols in utf-8. Words are encoded
+    in utf-8 followed by a single whitespace. After the whitespace the embedding components are
+    expected as little-endian float32.
+    :param path: path
+    :return: Embeddings
+    """
+    words = []
+    with open(path, 'rb') as file:
+        rows, cols = map(int, file.readline().decode("utf-8").split())
+        matrix = np.zeros((rows, cols), dtype=np.float32)
+        for row in range(rows):
+            word = []
+            while True:
+                byte = file.read(1)
+                if byte == b' ':
+                    break
+                if byte == b'':
+                    raise EOFError
+                if byte != b'\n':
+                    word.append(byte)
+            word = b''.join(word).decode('utf-8')
+            words.append(word)
+            vec = file.read(cols * matrix.itemsize)
+            matrix[row] = np.frombuffer(vec, dtype=np.float32)
+    norms = np.linalg.norm(matrix, axis=1)
+    matrix /= np.expand_dims(norms, axis=1)
+    return Embeddings(storage=ffp.storage.NdArray(matrix),
+                      norms=ffp.norms.Norms(norms),
+                      vocab=ffp.vocab.SimpleVocab(words))
+
+
+def load_textdims(path):
+    """
+    Read emebddings in textdims format:
+    The first line contains whitespace separated rows and cols, the rest of the file contains
+    whitespace separated word and vector components.
+    :param path:
+    :return:
+    """
+    words = []
+    with open(path) as file:
+        rows, cols = next(file).split()
+        matrix = np.zeros((int(rows), int(cols)), dtype=np.float32)
+        for i, line in enumerate(file):
+            line = line.strip().split()
+            words.append(line[0])
+            matrix[i] = line[1:]
+    norms = np.linalg.norm(matrix, axis=1)
+    matrix /= np.expand_dims(norms, axis=1)
+    return Embeddings(storage=ffp.storage.NdArray(matrix),
+                      norms=ffp.norms.Norms(norms),
+                      vocab=ffp.vocab.SimpleVocab(words))
+
+
+def load_text(path: str) -> 'Embeddings':
+    """
+    Read embeddings in text format:
+    Each line contains a word followed by a whitespace and a list of whitespace separated
+    values.
+    :param path: path
+    :return: Embeddings
+    """
+    words = []
+    vecs = []
+    with open(path) as file:
+        for line in file:
+            line = line.strip().split()
+            words.append(line[0])
+            vecs.append(line[1:])
+        matrix = np.array(vecs, dtype=np.float32)
+    norms = np.linalg.norm(matrix, axis=1)
+    matrix /= np.expand_dims(norms, axis=1)
+    return Embeddings(storage=ffp.storage.NdArray(matrix),
+                      norms=ffp.norms.Norms(norms),
+                      vocab=ffp.vocab.SimpleVocab(words))

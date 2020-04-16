@@ -57,24 +57,6 @@ class Vocab(ffp.io.Chunk):
         self._index = index
         self._words = words
 
-    @staticmethod
-    def read(filename: str) -> 'Vocab':
-        """
-        Read a vocabulary from the given finalfusion file.
-        :param filename: Path to a file containing a finalfusion vocabulary.
-        :return: The first vocabulary found in the file.
-        """
-        vocab_chunks = [
-            ffp.io.ChunkIdentifier.SimpleVocab,
-            ffp.io.ChunkIdentifier.BucketSubwordVocab,
-            ffp.io.ChunkIdentifier.ExplicitSubwordVocab,
-            ffp.io.ChunkIdentifier.FastTextSubwordVocab,
-        ]
-        vocab = Vocab._read(filename, vocab_chunks)
-        if vocab is None:
-            raise IOError("File did not contain a supported vocabulary")
-        return vocab
-
     @property
     def words(self) -> list:
         """
@@ -136,28 +118,6 @@ class Vocab(ffp.io.Chunk):
         if self.word_index != other.word_index:
             return False
         return True
-
-    @staticmethod
-    def _read(filename: str, target: List[ffp.io.ChunkIdentifier]):
-        """
-        Read the first chunk specified in `target` from `filename`.
-        :param filename: filename
-        :param target: List of target chunks
-        :return: Vocab
-        """
-        with open(filename, "rb") as file:
-            chunk = ffp.io.find_chunk(file, target)
-            if chunk is None:
-                return None
-            if chunk == ffp.io.ChunkIdentifier.SimpleVocab:
-                return SimpleVocab.read_chunk(file)
-            if chunk == ffp.io.ChunkIdentifier.BucketSubwordVocab:
-                return FinalfusionBucketVocab.read_chunk(file)
-            if chunk == ffp.io.ChunkIdentifier.ExplicitSubwordVocab:
-                return ExplicitVocab.read_chunk(file)
-            if chunk == ffp.io.ChunkIdentifier.FastTextSubwordVocab:
-                return FastTextVocab.read_chunk(file)
-            raise IOError("unknown vocab type: " + str(chunk))
 
     @staticmethod
     def _write_words_binary(b_words: Iterable[bytes], file: IO[bytes]):
@@ -256,18 +216,6 @@ class SubwordVocab(Vocab):
             return subwords
         return default
 
-    @staticmethod
-    def read(filename) -> 'SubwordVocab':
-        vocab_chunks = [
-            ffp.io.ChunkIdentifier.BucketSubwordVocab,
-            ffp.io.ChunkIdentifier.ExplicitSubwordVocab,
-            ffp.io.ChunkIdentifier.FastTextSubwordVocab
-        ]
-        vocab = SubwordVocab._read(filename, vocab_chunks)
-        if vocab is None:
-            raise IOError("File did not contain a vocabulary")
-        return vocab
-
     @property
     def idx_bound(self) -> int:
         return len(self) + self.indexer.idx_bound
@@ -350,17 +298,6 @@ class BucketVocab(SubwordVocab):
     """
     Bucket vocabulary, hashes ngrams with an imperfect hashing function.
     """
-    @staticmethod
-    def read(filename) -> 'BucketVocab':
-        vocab_chunks = [
-            ffp.io.ChunkIdentifier.BucketSubwordVocab,
-            ffp.io.ChunkIdentifier.FastTextSubwordVocab
-        ]
-        vocab = BucketVocab._read(filename, vocab_chunks)
-        if vocab is None:
-            raise IOError("File did not contain a vocabulary")
-        return vocab
-
     def to_explicit(self) -> 'ExplicitVocab':
         """
         Convert a bucket vocabulary to an explicit vocab.
@@ -427,14 +364,6 @@ class FinalfusionBucketVocab(BucketVocab):
         super().__init__(words, indexer, index)
 
     @staticmethod
-    def read(filename):
-        vocab = FinalfusionBucketVocab._read(
-            filename, [ffp.io.ChunkIdentifier.BucketSubwordVocab])
-        if vocab is None:
-            raise IOError("File did not contain a vocabulary")
-        return vocab
-
-    @staticmethod
     def from_corpus(
             filename,
             cutoff=Cutoff(30, mode='min_freq'),
@@ -478,14 +407,6 @@ class FastTextVocab(BucketVocab):
         super().__init__(words, indexer, index)
 
     @staticmethod
-    def read(filename):
-        vocab = FastTextVocab._read(
-            filename, [ffp.io.ChunkIdentifier.FastTextSubwordVocab])
-        if vocab is None:
-            raise IOError("File did not contain a vocabulary")
-        return vocab
-
-    @staticmethod
     def from_corpus(
             filename,
             cutoff: Cutoff = Cutoff(30, mode='min_freq'),
@@ -526,14 +447,6 @@ class ExplicitVocab(SubwordVocab):
     def __init__(self, words, indexer, index=None):
         assert isinstance(indexer, ffp.subwords.ExplicitIndexer)
         super().__init__(words, indexer, index)
-
-    @staticmethod
-    def read(filename) -> 'ExplicitVocab':
-        vocab = ExplicitVocab._read(
-            filename, [ffp.io.ChunkIdentifier.ExplicitSubwordVocab])
-        if vocab is None:
-            raise IOError("File did not contain a vocabulary")
-        return vocab
 
     @staticmethod
     def from_corpus(filename,
@@ -614,14 +527,6 @@ class SimpleVocab(Vocab):
     Simple vocabulary without subword indices.
     """
     @staticmethod
-    def read(filename) -> 'SimpleVocab':
-        vocab = SimpleVocab._read(filename,
-                                  [ffp.io.ChunkIdentifier.SimpleVocab])
-        if vocab is None:
-            raise IOError("File did not contain a vocabulary")
-        return vocab
-
-    @staticmethod
     def from_corpus(filename, cutoff: Cutoff = Cutoff(30, mode="min_freq")):
         """
         Construct a simple vocabulary from the given corpus.
@@ -658,3 +563,124 @@ class SimpleVocab(Vocab):
 
     def idx(self, item, default=None):
         return self.word_index.get(item, default)
+
+
+def load_vocab(path: str) -> Vocab:
+    """
+    Read a vocabulary from the given finalfusion file.
+    :param path: Path to a file containing a finalfusion vocabulary.
+    :return: The first vocabulary found in the file.
+    """
+    vocab_chunks = [
+        ffp.io.ChunkIdentifier.SimpleVocab,
+        ffp.io.ChunkIdentifier.BucketSubwordVocab,
+        ffp.io.ChunkIdentifier.ExplicitSubwordVocab,
+        ffp.io.ChunkIdentifier.FastTextSubwordVocab,
+    ]
+    vocab = _read(path, vocab_chunks)
+    if vocab is None:
+        raise IOError("File did not contain a supported vocabulary")
+    return vocab
+
+
+def load_simple_vocab(path: str) -> SimpleVocab:
+    """
+    Load a SimpleVocab from the given finalfusion file.
+    :param path: Path to a file containing a finalfusion SimpleVocab.
+    :return: The first SimpleVocab found in the file.
+    """
+    vocab = _read(path, [ffp.io.ChunkIdentifier.SimpleVocab])
+    if vocab is None:
+        raise IOError("File did not contain a vocabulary")
+    return vocab
+
+
+def load_subword_vocab(path: str) -> SubwordVocab:
+    """
+    Load a SubwordVocab from the given finalfusion file.
+    :param path: Path to a file containing a finalfusion SimpleVocab.
+    :return: The first SimpleVocab found in the file.
+    """
+    vocab_chunks = [
+        ffp.io.ChunkIdentifier.BucketSubwordVocab,
+        ffp.io.ChunkIdentifier.ExplicitSubwordVocab,
+        ffp.io.ChunkIdentifier.FastTextSubwordVocab
+    ]
+    vocab = _read(path, vocab_chunks)
+    if vocab is None:
+        raise IOError("File did not contain a SubwordVocab")
+    return vocab
+
+
+def load_bucket_vocab(path: str) -> BucketVocab:
+    """
+    Load a BucketVocab from the given finalfusion file.
+    :param path: Path to a file containing a finalfusion SimpleVocab.
+    :return: The first SimpleVocab found in the file.
+    """
+    vocab_chunks = [
+        ffp.io.ChunkIdentifier.BucketSubwordVocab,
+        ffp.io.ChunkIdentifier.FastTextSubwordVocab
+    ]
+    vocab = _read(path, vocab_chunks)
+    if vocab is None:
+        raise IOError("File did not contain a BucketVocab")
+    return vocab
+
+
+def load_finalfusion_bucket_vocab(path: str) -> FinalfusionBucketVocab:
+    """
+    Load a FinalfusionBucketVocab from the given finalfusion file.
+    :param path: Path to a file containing a finalfusion SimpleVocab.
+    :return: The first SimpleVocab found in the file.
+    """
+    vocab = _read(path, [ffp.io.ChunkIdentifier.BucketSubwordVocab])
+    if vocab is None:
+        raise IOError("File did not contain a SubwordVocab")
+    return vocab
+
+
+def load_fasttext_vocab(path) -> FastTextVocab:
+    """
+    Load a FastTextVocab from the given finalfusion file.
+    :param path: Path to a file containing a finalfusion SimpleVocab.
+    :return: The first SimpleVocab found in the file.
+    """
+    vocab = _read(path, [ffp.io.ChunkIdentifier.FastTextSubwordVocab])
+    if vocab is None:
+        raise IOError("File did not contain a vocabulary")
+    return vocab
+
+
+def load_explicit_vocab(path: str) -> ExplicitVocab:
+    """
+    Load an ExplicitVocab from the given finalfusion file.
+    :param path: Path to a file containing a finalfusion SimpleVocab.
+    :return: The first SimpleVocab found in the file.
+    """
+    vocab = _read(path, [ffp.io.ChunkIdentifier.ExplicitSubwordVocab])
+    if vocab is None:
+        raise IOError("File did not contain an ExplicitVocab")
+    return vocab
+
+
+def _read(path: str, target: List[ffp.io.ChunkIdentifier]):
+    """
+    Read the first chunk specified in `target` from `filename`.
+    :param path: filename
+    :param target: List of target chunks
+    :return: Vocab
+    """
+    with open(path, "rb") as file:
+        chunk = ffp.io.find_chunk(file, target)
+        if chunk is None:
+            return None
+        if chunk == ffp.io.ChunkIdentifier.SimpleVocab:
+            return SimpleVocab.read_chunk(file)
+        if chunk == ffp.io.ChunkIdentifier.BucketSubwordVocab:
+            return FinalfusionBucketVocab.read_chunk(file)
+        if chunk == ffp.io.ChunkIdentifier.ExplicitSubwordVocab:
+            return ExplicitVocab.read_chunk(file)
+        if chunk == ffp.io.ChunkIdentifier.FastTextSubwordVocab:
+            return FastTextVocab.read_chunk(file)
+        raise IOError("unknown vocab type: " + str(chunk))

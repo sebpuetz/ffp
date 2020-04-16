@@ -59,7 +59,7 @@ class ExplicitIndexer:
         :param offset: is added to each index
         :param bracket: whether to bracket the word with '<' and '>'
         :param with_ngrams: whether to return the indices with corresponding ngrams
-        :return: List of subword indices, obtionally as tuples with ngrams
+        :return: List of subword indices, optionally as tuples with ngrams
         """
         w_ngrams = word_ngrams(word, bracket)
         if with_ngrams:

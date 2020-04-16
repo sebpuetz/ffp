@@ -23,20 +23,6 @@ class Norms(np.ndarray, ffp.io.Chunk):
         return obj
 
     @staticmethod
-    def read(filename: str) -> 'Norms':
-        """
-        Read a Norms chunk from the given file.
-        :param filename: filename
-        """
-        with open(filename, "rb") as file:
-            chunk = ffp.io.find_chunk(file, [ffp.io.ChunkIdentifier.NdNorms])
-            if chunk is None:
-                raise IOError("cannot find Norms chunk")
-            if chunk == ffp.io.ChunkIdentifier.NdNorms:
-                return Norms.read_chunk(file)
-            raise IOError("unexpected chunk: " + str(chunk))
-
-    @staticmethod
     def chunk_identifier():
         return ffp.io.ChunkIdentifier.NdNorms
 
@@ -66,3 +52,17 @@ class Norms(np.ndarray, ffp.io.Chunk):
         if isinstance(key, slice):
             return Norms(super().__getitem__(key))
         return super().__getitem__(key)
+
+
+def load_norms(path: str):
+    """
+    Read a Norms chunk from the given finalfusion file.
+    :param path: path
+    """
+    with open(path, "rb") as file:
+        chunk = ffp.io.find_chunk(file, [ffp.io.ChunkIdentifier.NdNorms])
+        if chunk is None:
+            raise IOError("cannot find Norms chunk")
+        if chunk == ffp.io.ChunkIdentifier.NdNorms:
+            return Norms.read_chunk(file)
+        raise IOError("unexpected chunk: " + str(chunk))

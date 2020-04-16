@@ -15,20 +15,6 @@ class Metadata(dict, ffp.io.Chunk):
     Embeddings metadata
     """
     @staticmethod
-    def read(filename: str) -> 'Metadata':
-        """
-        Read a Metadata chunk from the given file.
-        :param filename: filename
-        """
-        with open(filename, 'rb') as file:
-            chunk = ffp.io.find_chunk(file, [ffp.io.ChunkIdentifier.Metadata])
-            if chunk is None:
-                raise IOError("cannot find Metadata chunk")
-            if chunk == ffp.io.ChunkIdentifier.Metadata:
-                return Metadata.read_chunk(file)
-            raise IOError("unexpected chunk: " + str(chunk))
-
-    @staticmethod
     def chunk_identifier():
         return ffp.io.ChunkIdentifier.Metadata
 
@@ -45,3 +31,17 @@ class Metadata(dict, ffp.io.Chunk):
         file.write(
             struct.pack("<IQ", int(self.chunk_identifier()), len(b_data)))
         file.write(b_data)
+
+
+def load_metadata(path: str) -> Metadata:
+    """
+    Read a Metadata chunk from the given file.
+    :param path: filename
+    """
+    with open(path, 'rb') as file:
+        chunk = ffp.io.find_chunk(file, [ffp.io.ChunkIdentifier.Metadata])
+        if chunk is None:
+            raise IOError("cannot find Metadata chunk")
+        if chunk == ffp.io.ChunkIdentifier.Metadata:
+            return Metadata.read_chunk(file)
+        raise IOError("unexpected chunk: " + str(chunk))

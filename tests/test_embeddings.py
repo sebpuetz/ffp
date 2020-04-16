@@ -12,26 +12,25 @@ TEST_NORMS = [
 
 
 def test_read_embeddings(tests_root):
-    ffp.embeddings.Embeddings.read(
-        os.path.join(tests_root, "data", "simple_vocab.fifu"))
-    e = ffp.embeddings.Embeddings.read(
+    ffp.load_finalfusion(os.path.join(tests_root, "data", "simple_vocab.fifu"))
+    e = ffp.load_finalfusion(
         os.path.join(tests_root, "data", "ff_buckets.fifu"))
-    e2 = ffp.embeddings.Embeddings.read(
-        os.path.join(tests_root, "data", "ff_buckets.fifu"),
-        "finalfusion_mmap")
+    e2 = ffp.load_finalfusion(os.path.join(tests_root, "data",
+                                           "ff_buckets.fifu"),
+                              mmap=True)
     assert np.allclose(e.storage, e2.storage)
     with pytest.raises(TypeError):
-        ffp.embeddings.Embeddings.read(None)
+        ffp.load_finalfusion(None)
     with pytest.raises(IOError):
-        ffp.embeddings.Embeddings.read(1)
+        ffp.load_finalfusion(1)
     with pytest.raises(IOError):
-        ffp.embeddings.Embeddings.read("foo")
+        ffp.load_finalfusion("foo")
 
 
 def test_embeddings_from_storage():
     matrix = np.tile(np.arange(0, 10, dtype=np.float32), (10, 1))
     s = ffp.storage.NdArray(matrix)
-    e = ffp.embeddings.Embeddings(storage=s)
+    e = ffp.Embeddings(storage=s)
     assert np.allclose(e.storage, matrix)
     assert np.allclose(s, matrix)
 
@@ -125,14 +124,14 @@ def test_ff_embeddings_roundtrip(embeddings_fifu, vocab_array_tuple):
     matrix = vocab_array_tuple[1]
     matrix = matrix.squeeze() / np.linalg.norm(matrix, axis=1, keepdims=True)
     assert np.allclose(matrix, s)
-    assert np.allclose(s, ffp.embeddings.Embeddings.read(filename).storage)
+    assert np.allclose(s, ffp.load_finalfusion(filename).storage)
 
 
 def test_ff_embeddings_roundtrip_ff_buckets(bucket_vocab_embeddings_fifu):
     tmp_dir = tempfile.gettempdir()
     filename = os.path.join(tmp_dir, "write_embeddings.fifu")
     bucket_vocab_embeddings_fifu.write(filename)
-    e2 = ffp.embeddings.Embeddings.read(filename)
+    e2 = ffp.load_finalfusion(filename)
     assert bucket_vocab_embeddings_fifu.vocab == e2.vocab
     assert bucket_vocab_embeddings_fifu.metadata == e2.metadata
     assert np.allclose(bucket_vocab_embeddings_fifu.storage, e2.storage)
@@ -200,8 +199,8 @@ def test_norms(embeddings_fifu):
 
 def test_no_norms(vocab_array_tuple):
     vocab, matrix = vocab_array_tuple
-    embeddings = ffp.embeddings.Embeddings(vocab=ffp.vocab.SimpleVocab(vocab),
-                                           storage=ffp.storage.NdArray(matrix))
+    embeddings = ffp.Embeddings(vocab=ffp.vocab.SimpleVocab(vocab),
+                                storage=ffp.storage.NdArray(matrix))
     with pytest.raises(TypeError):
         _ = embeddings.embedding_with_norm("bla")
 

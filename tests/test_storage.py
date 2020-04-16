@@ -9,12 +9,12 @@ import tempfile
 
 def test_read_array(tests_root, vocab_array_tuple):
     with pytest.raises(TypeError):
-        ffp.storage.Storage.read(None)
+        ffp.storage.load_storage(None)
     with pytest.raises(IOError):
-        ffp.storage.Storage.read(1)
+        ffp.storage.load_storage(1)
     with pytest.raises(IOError):
-        ffp.storage.Storage.read("foo")
-    e = ffp.storage.Storage.read(
+        ffp.storage.load_storage("foo")
+    e = ffp.storage.load_storage(
         os.path.join(tests_root, "data", "embeddings.fifu"))
     matrix = vocab_array_tuple[1]
     matrix = matrix.squeeze() / np.linalg.norm(matrix, axis=1, keepdims=True)
@@ -24,12 +24,12 @@ def test_read_array(tests_root, vocab_array_tuple):
 
 def test_mmap_array(tests_root, vocab_array_tuple):
     with pytest.raises(TypeError):
-        ffp.storage.Storage.read(None, mmap=True)
+        ffp.storage.load_storage(None, mmap=True)
     with pytest.raises(IOError):
-        ffp.storage.Storage.read(1, mmap=True)
+        ffp.storage.load_storage(1, mmap=True)
     with pytest.raises(IOError):
-        ffp.storage.Storage.read("foo", mmap=True)
-    e = ffp.storage.Storage.read(os.path.join(tests_root, "data",
+        ffp.storage.load_storage("foo", mmap=True)
+    e = ffp.storage.load_storage(os.path.join(tests_root, "data",
                                               "embeddings.fifu"),
                                  mmap=True)
     matrix = vocab_array_tuple[1]
@@ -41,14 +41,14 @@ def test_mmap_array(tests_root, vocab_array_tuple):
 def test_array_roundtrip(tests_root):
     tmp_dir = tempfile.gettempdir()
     filename = os.path.join(tmp_dir, "write_simple.fifu")
-    s = ffp.storage.Storage.read(
+    s = ffp.storage.load_storage(
         os.path.join(tests_root, "data", "embeddings.fifu"))
     zero = s[0]
     assert isinstance(zero, np.ndarray)
     assert not isinstance(zero, ffp.storage.Storage)
     assert not isinstance(zero, ffp.storage.NdArray)
     s.write(filename)
-    s2 = ffp.storage.Storage.read(filename)
+    s2 = ffp.storage.load_storage(filename)
     zero2 = s2[0]
     assert np.allclose(zero, zero2)
     assert s.shape == s2.shape
@@ -58,12 +58,12 @@ def test_array_roundtrip(tests_root):
 def test_array_roundtrip_mmap(tests_root):
     tmp_dir = tempfile.gettempdir()
     filename = os.path.join(tmp_dir, "write_simple.fifu")
-    s = ffp.storage.Storage.read(os.path.join(tests_root, "data",
+    s = ffp.storage.load_storage(os.path.join(tests_root, "data",
                                               "embeddings.fifu"),
                                  mmap=True)
     zero = s[0]
     s.write(filename)
-    s2 = ffp.storage.Storage.read(filename, True)
+    s2 = ffp.storage.load_storage(filename, True)
     zero2 = s2[0]
     assert np.allclose(zero, zero2)
     assert s.shape == s2.shape
@@ -176,7 +176,7 @@ def test_write_sliced():
         if step == 0:
             continue
         s[lower:upper:step].write(filename)
-        s2 = ffp.storage.NdArray.read(filename, bool(mmap))
+        s2 = ffp.storage.load_ndarray(filename, bool(mmap))
         assert np.allclose(matrix[lower:upper:step], s2)
 
 

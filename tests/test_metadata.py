@@ -8,12 +8,12 @@ import ffp
 
 def test_read_metadata(tests_root):
     with pytest.raises(TypeError):
-        ffp.metadata.Metadata.read(None)
+        ffp.metadata.load_metadata(None)
     with pytest.raises(IOError):
-        ffp.metadata.Metadata.read(1)
+        ffp.metadata.load_metadata(1)
     with pytest.raises(IOError):
-        ffp.metadata.Metadata.read("foo")
-    m = ffp.metadata.Metadata.read(
+        ffp.metadata.load_metadata("foo")
+    m = ffp.metadata.load_metadata(
         os.path.join(tests_root, "data", "ff_buckets.fifu"))
     assert "common_config" in m
     assert m["common_config"]["dims"] == 5
@@ -23,10 +23,10 @@ def test_read_metadata(tests_root):
 def test_metadata_roundtrip(tests_root):
     tmp_dir = tempfile.gettempdir()
     filename = os.path.join(tmp_dir, "write_meta.fifu")
-    m = ffp.metadata.Metadata.read(
+    m = ffp.metadata.load_metadata(
         os.path.join(tests_root, "data", "ff_buckets.fifu"))
     m.write(filename)
-    m2 = ffp.metadata.Metadata.read(filename)
+    m2 = ffp.metadata.load_metadata(filename)
     assert m == m2
 
 
@@ -35,7 +35,7 @@ def test_metadata_dict():
     filename = os.path.join(tmp_dir, "write_meta.fifu")
     metadata = ffp.metadata.Metadata({"test": 1, "test2": "test"})
     metadata.write(filename)
-    m2 = ffp.metadata.Metadata.read(filename)
+    m2 = ffp.metadata.load_metadata(filename)
     assert metadata == m2
 
 

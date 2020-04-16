@@ -9,12 +9,12 @@ import tempfile
 
 def test_read_array(tests_root):
     with pytest.raises(TypeError):
-        ffp.norms.Norms.read(None)
+        ffp.norms.load_norms(None)
     with pytest.raises(IOError):
-        ffp.norms.Norms.read(1)
+        ffp.norms.load_norms(1)
     with pytest.raises(IOError):
-        ffp.norms.Norms.read("foo")
-    n = ffp.norms.Norms.read(
+        ffp.norms.load_norms("foo")
+    n = ffp.norms.load_norms(
         os.path.join(tests_root, "data", "embeddings.fifu"))
     target_norms = np.array([
         6.557438373565674, 8.83176040649414, 6.164413928985596,
@@ -27,7 +27,7 @@ def test_read_array(tests_root):
 def test_norms_roundtrip(tests_root):
     tmp_dir = tempfile.gettempdir()
     filename = os.path.join(tmp_dir, "write_norms.fifu")
-    n = ffp.norms.Norms.read(
+    n = ffp.norms.load_norms(
         os.path.join(tests_root, "data", "embeddings.fifu"))
     target_norms = np.array([
         6.557438373565674, 8.83176040649414, 6.164413928985596,
@@ -37,7 +37,7 @@ def test_norms_roundtrip(tests_root):
     assert np.allclose(n, target_norms)
 
     n.write(filename)
-    n2 = ffp.norms.Norms.read(filename)
+    n2 = ffp.norms.load_norms(filename)
     assert n.shape == n2.shape
     assert np.allclose(n, n2, target_norms)
 
@@ -89,7 +89,7 @@ def test_write_sliced():
         if step == 0:
             continue
         s[lower:upper:step].write(filename)
-        s2 = ffp.norms.Norms.read(filename)
+        s2 = ffp.norms.load_norms(filename)
         assert np.allclose(norms[lower:upper:step], s2)
 
 
