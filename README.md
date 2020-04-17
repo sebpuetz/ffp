@@ -1,6 +1,6 @@
 # ffp
 
-Interface to [finalfusion](https://finalfusion.github.io) written in (almost) pure Python. `ffp` supports reading from various embedding formats and more liberal construction of embeddings from components compared to the other `finalfusion` interfaces. 
+Interface to [finalfusion](https://finalfusion.github.io) written in (almost) pure Python. `ffp` supports reading from various embedding formats and more liberal construction of embeddings from components compared to the other `finalfusion` interfaces. Lots of pretrained [finalfrontier](https://github.com/finalfusion/finalfrontier/) embeddings are available [here](https://finalfusion.github.io/pretrained), fastText embeddings converted to finalfusion can be found [here](http://www.sfs.uni-tuebingen.de/a3-public-data/finalfusion-fasttext/)  
 
 This is an early version of `ffp`, feedback is very much appreciated!
 
@@ -43,7 +43,7 @@ Currently supported Chunks:
 import ffp
 import numpy as np
 
-embeddings = ffp.embeddings.Embeddings.read("path/to/file.fifu", "finalfusion")
+embeddings = ffp.load_finalfusion("path/to/file.fifu", "finalfusion")
 res = embeddings["Query"]
 # reading into an output array
 in_vocab_embeddings = np.zeros((len(embeddings.vocab), embeddings.storage.shape[1]))
@@ -57,7 +57,7 @@ for word in embeddings.vocab:
 ~~~Python
 import ffp
 
-vocab = ffp.vocab.Vocab.read("path/to/file.fifu")
+vocab = ffp.vocab.load_vocab("path/to/file.fifu")
 ~~~
 
 * ...construct an `ExplicitVocab` from a corpus and write it to a file:
