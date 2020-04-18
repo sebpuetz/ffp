@@ -159,3 +159,6 @@ def test_subword_indices(tests_root):
         590, 648, 651, 707, 717, 761, 817, 820, 857, 860, 1007
     ]
     assert sorted(v.subword_indices("tübingen", True)) == tuebingen_buckets
+    assert sorted(v["tübingen"]) == tuebingen_buckets
+    with pytest.raises(TypeError):
+        _ = v[None]

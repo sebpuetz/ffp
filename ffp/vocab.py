@@ -270,8 +270,14 @@ class SubwordVocab(Vocab):
                                             offset=len(self.words),
                                             bracket=bracket)
 
-    def __getitem__(self, item: str) -> int:
-        return self.word_index[item]
+    def __getitem__(self, item: str) -> Union[int, List[int]]:
+        idx = self.word_index.get(item)
+        if idx is not None:
+            return idx
+        subwords = self.subword_indices(item)
+        if subwords:
+            return subwords
+        raise KeyError("No indices foud for " + item)
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, type(self)):

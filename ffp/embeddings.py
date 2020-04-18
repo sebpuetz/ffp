@@ -200,14 +200,14 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         :return: the embedding
         """
         idx = self._vocab.idx(word)
+        if idx is None:
+            return default
         res = self._storage[idx]
         if res.ndim == 1:
             if out is not None:
                 out[:] = res
             else:
                 out = res
-        elif idx is None:
-            return default
         else:
             out = np.add.reduce(res, 0, out=out, keepdims=False)
             out /= np.linalg.norm(out)
@@ -229,6 +229,8 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         if self._norms is None:
             raise TypeError("embeddings don't contain norms chunk")
         idx = self._vocab.idx(word)
+        if idx is None:
+            return default
         res = self._storage[idx]
         if res.ndim == 1:
             if out is not None:
@@ -236,8 +238,6 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
             else:
                 out = res
             return out, self._norms[idx]
-        if idx is None:
-            return default
 
         out = np.add.reduce(res, 0, out=out, keepdims=False)
         norm = np.linalg.norm(out)
@@ -269,6 +269,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         return Embeddings(vocab=vocab, storage=ffp.storage.NdArray(storage))
 
     def __getitem__(self, item):
+        # no need to check for none since Vocab raises KeyError if it can't produce indices
         idx = self._vocab[item]
         res = self._storage[idx]
         if res.ndim == 1:

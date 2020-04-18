@@ -157,7 +157,7 @@ def test_embeddings_lookup(embeddings_fifu, vocab_array_tuple):
         _ = embeddings_fifu[1]
 
 
-def test_unknown_embeddings(embeddings_fifu):
+def test_unknown_embeddings(embeddings_fifu, bucket_vocab_embeddings_fifu):
     assert embeddings_fifu.embedding(
         "OOV") is None, "Unknown lookup with no default failed"
     assert embeddings_fifu.embedding(
@@ -167,6 +167,8 @@ def test_unknown_embeddings(embeddings_fifu):
         embeddings_fifu.embedding("OOV",
                                   default=np.zeros(10, dtype=np.float32)),
         np.array([0.] * 10)), "Unknown lookup with 'list' default failed"
+    with pytest.raises(TypeError):
+        _ = bucket_vocab_embeddings_fifu.embedding(None)
 
 
 def test_embeddings_with_norms_oov(embeddings_fifu):

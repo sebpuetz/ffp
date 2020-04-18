@@ -45,6 +45,8 @@ cdef class FinalfusionHashIndexer:
         :param with_ngrams: whether to return the indices with corresponding ngrams
         :return: List of subword indices, optionally as tuples with ngrams
         """
+        if word is None:
+            raise TypeError("Can't extract ngrams for None type")
         if bracket:
             word = "<%s>" % word
         cdef uint32_t j
@@ -101,6 +103,8 @@ cdef class FastTextIndexer:
         :param with_ngrams: whether to return the indices with corresponding ngrams
         :return: List of subword indices, optionally as tuples with ngrams
         """
+        if word is None:
+            raise TypeError("Can't extract ngrams for None type")
         cdef unsigned int start, end
         cdef Py_ssize_t i, j
         cdef uint64_t h

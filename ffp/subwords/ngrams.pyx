@@ -12,6 +12,8 @@ cpdef word_ngrams(str word, uint32_t min_n=3, uint32_t max_n=6, bint bracket=Tru
     :param bracket: whether to bracket the word
     :return: list of n-grams
     """
+    if word is None:
+        raise TypeError("Can't extract ngrams for None type")
     assert max_n >= min_n > 0
     if bracket:
         word = "<%s>" % word
