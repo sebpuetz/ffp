@@ -1,7 +1,7 @@
 """
 Finalfusion Embeddings
 """
-
+import struct
 from enum import Enum, unique
 from typing import Optional, Union, Tuple
 
@@ -332,7 +332,7 @@ def load_finalfusion(path: str, mmap: bool = False) -> 'Embeddings':
         return embeddings
 
 
-def load_word2vec(path: str) -> 'Embeddings':
+def load_word2vec(path: str) -> Embeddings:
     """
     Read embeddings in word2vec binary format:
     Files are expected to start with a line containing rows and cols in utf-8. Words are encoded
@@ -366,7 +366,7 @@ def load_word2vec(path: str) -> 'Embeddings':
                       vocab=ffp.vocab.SimpleVocab(words))
 
 
-def load_textdims(path):
+def load_textdims(path) -> Embeddings:
     """
     Read emebddings in textdims format:
     The first line contains whitespace separated rows and cols, the rest of the file contains
@@ -389,7 +389,7 @@ def load_textdims(path):
                       vocab=ffp.vocab.SimpleVocab(words))
 
 
-def load_text(path: str) -> 'Embeddings':
+def load_text(path: str) -> Embeddings:
     """
     Read embeddings in text format:
     Each line contains a word followed by a whitespace and a list of whitespace separated
@@ -410,3 +410,102 @@ def load_text(path: str) -> 'Embeddings':
     return Embeddings(storage=ffp.storage.NdArray(matrix),
                       norms=ffp.norms.Norms(norms),
                       vocab=ffp.vocab.SimpleVocab(words))
+
+
+def load_fastText(path: str) -> Embeddings:  # pylint: disable=invalid-name
+    """
+    Read embeddings from a file in fastText format.
+    :param path: path
+    :return: Embeddings
+    """
+    with open(path, 'rb') as file:
+        _read_ft_header(file)
+        metadata = _read_ft_cfg(file)
+        vocab = _read_ft_vocab(file, metadata['buckets'], metadata['min_n'],
+                               metadata['max_n'])
+        quantized = struct.unpack("<B", file.read(1))[0]
+        if quantized:
+            raise NotImplementedError("Quantized storage is not supported")
+        rows, cols = struct.unpack("<QQ", file.read(16))
+        matrix = np.fromfile(file=file, count=rows * cols, dtype=np.float32)
+        matrix = np.reshape(matrix, (rows, cols))
+        for i, word in enumerate(vocab):
+            indices = [i] + vocab.subword_indices(word)
+            matrix[i] = matrix[indices].mean(0, keepdims=False)
+        norms = np.linalg.norm(matrix[:len(vocab)], axis=1)
+        matrix[:len(vocab)] /= np.expand_dims(norms, axis=1)
+        storage = ffp.storage.NdArray(matrix)
+        norms = ffp.norms.Norms(norms)
+    return Embeddings(storage, vocab, norms, metadata)
+
+
+def _read_ft_header(file):
+    magic = struct.unpack("<I", file.read(4))[0]
+    if magic != 793_712_314:
+        raise IOError("Magic should be 793_712_314, not: " + str(magic))
+    version = struct.unpack("<I", file.read(4))[0]
+    if version > 12:
+        raise ValueError("Expected version 12, got: " + str(version))
+
+
+def _read_ft_cfg(file):
+    cfg = struct.unpack("<" + 12 * "I" + "d", file.read(12 * 4 + 8))
+    loss, model = cfg[6:8]  # map to string
+    if loss == 1:
+        loss = 'HierarchicalSoftmax'
+    elif loss == 2:
+        loss = 'NegativeSampling'
+    elif loss == 3:
+        loss = 'Softmax'
+    if model == 1:
+        model = 'CBOW'
+    elif model == 2:
+        model = 'SkipGram'
+    elif model == 3:
+        model = 'Supervised'
+    metadata = ffp.metadata.Metadata({
+        'dims': cfg[0],
+        'window_size': cfg[1],
+        'epoch': cfg[2],
+        'min_count': cfg[3],
+        'ns': cfg[4],
+        'word_ngrams': cfg[5],
+        'loss': loss,
+        'model': model,
+        'buckets': cfg[8],
+        'min_n': cfg[9],
+        'max_n': cfg[10],
+        'lr_update_rate': cfg[11],
+        'sampling_threshold': cfg[12],
+    })
+    return metadata
+
+
+def _read_ft_vocab(file, buckets, min_n, max_n):
+    vocab_size = struct.unpack("<I", file.read(4))[0]
+    _ = struct.unpack("<I", file.read(4))[0]  # discard n_words
+    n_labels = struct.unpack("<I", file.read(4))[0]
+    if n_labels:
+        raise NotImplementedError(
+            "fastText prediction models are not supported")
+    _n_tokens = struct.unpack("<Q", file.read(8))[0]
+    prune_idx_size = struct.unpack("<q", file.read(8))[0]
+    if prune_idx_size > 0:
+        raise NotImplementedError("Pruned vocabs are not supported")
+    words = []
+    for _ in range(vocab_size):
+        word = bytearray()
+        while True:
+            byte = file.read(1)
+            if byte == b'\x00':
+                words.append(word.decode("utf8"))
+                break
+            if byte == b'':
+                raise EOFError
+            word.extend(byte)
+        _freq = struct.unpack("<Q", file.read(8))[0]
+        entry_type = struct.unpack("<B", file.read(1))[0]
+        if entry_type != 0:
+            raise ValueError("Non word entry", word)
+    indexer = ffp.subwords.FastTextIndexer(buckets, min_n, max_n)
+    return ffp.vocab.FastTextVocab(words, indexer)

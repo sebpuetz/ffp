@@ -229,6 +229,28 @@ def test_embeddings(embeddings_fifu, embeddings_text, embeddings_text_dims,
                            storage_row), "FiFu and storage row  mismatch"
 
 
+def test_read_fasttext(embeddings_ft):
+    target_sims = np.array([
+        0.6032760739326477, 0.5803255438804626, 0.5076280236244202,
+        0.4979204535484314, 0.4824579954147339, 0.4742707908153534,
+        0.4680115878582001, 0.466314435005188, 0.46247801184654236,
+        0.4616358280181885
+    ])
+    target_words = [
+        'man', 'oder', 'ist', 'sein', 'eines', 'online', 'wird', 'ohne',
+        'kann', 'anderen'
+    ]
+    sims = embeddings_ft.storage[:len(embeddings_ft.vocab
+                                      )] @ embeddings_ft.embedding("test")
+    knn_inds = np.argpartition(sims, -10)[-10:]
+    knn_inds_sorted = (-sims[knn_inds]).argsort()
+    assert np.allclose(sims[knn_inds[knn_inds_sorted]], target_sims)
+    assert target_words == [
+        embeddings_ft.vocab.words[idx] for idx in knn_inds[knn_inds_sorted]
+        if embeddings_ft.vocab.words[idx] != "test"
+    ]
+
+
 def test_buckets_to_explicit(bucket_vocab_embeddings_fifu):
     explicit = bucket_vocab_embeddings_fifu.bucket_to_explicit()
     assert bucket_vocab_embeddings_fifu.vocab.words == explicit.vocab.words

@@ -62,5 +62,11 @@ def embeddings_w2v(tests_root):
 
 
 @pytest.fixture
+def embeddings_ft(tests_root):
+    yield ffp.embeddings.load_fastText(
+        os.path.join(tests_root, "data/fasttext.bin"))
+
+
+@pytest.fixture
 def tests_root():
     yield os.path.dirname(__file__)
