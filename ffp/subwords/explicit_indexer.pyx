@@ -1,16 +1,17 @@
-"""
-ExplicitIndexers store ngrams explicitly instead of using a hashing trick.
-"""
+# cython: language_level=3
+# cython: embedsignature=True
+from typing import List, Tuple, Optional, Dict, Iterable
 
-from typing import List, Dict, Optional, Iterable, Tuple
+from libc.stdint cimport uint32_t
+import cython
 
-from .ngrams import word_ngrams
+cdef class ExplicitIndexer:
+    cdef dict _ngram_index
+    cdef list _ngrams
+    cdef Py_ssize_t _bound
+    cdef public uint32_t min_n
+    cdef public uint32_t max_n
 
-
-class ExplicitIndexer:
-    """
-    Explicit n-gram indexer.
-    """
     def __init__(self,
                  ngrams: List[str],
                  ngram_range: Tuple[int, int] = (3, 6),
@@ -28,7 +29,7 @@ class ExplicitIndexer:
         self._ngram_index = ngram_index
 
     @property
-    def ngrams(self):
+    def ngrams(self) -> List[str]:
         """
         Get the list of n-grams in this vocabulary.
         :return: list of n-grams.
@@ -51,7 +52,8 @@ class ExplicitIndexer:
         """
         return self._bound
 
-    def subword_indices(self, word, offset=0, bracket=True, with_ngrams=False):
+    @cython.boundscheck(False)
+    cpdef subword_indices(self, str word, offset=0, bint bracket=True, bint with_ngrams=False):
         """
         Get the subword indices for the given word.
 
@@ -61,22 +63,32 @@ class ExplicitIndexer:
         :param with_ngrams: whether to return the indices with corresponding ngrams
         :return: List of subword indices, optionally as tuples with ngrams
         """
-        w_ngrams = word_ngrams(word, bracket)
-        if with_ngrams:
-            return [(ngram, idx + offset)
-                    for ngram, idx in ((ngram, self._ngram_index.get(ngram))
-                                       for ngram in w_ngrams)
-                    if idx is not None]
-        return [
-            idx + offset for idx in (self._ngram_index.get(ngram)
-                                     for ngram in w_ngrams) if idx is not None
-        ]
+        if bracket:
+            word = "<%s>" % word
+        cdef Py_ssize_t i, j
+        cdef Py_ssize_t length = len(word)
+        cdef list ngrams = []
+        if length < self.min_n:
+            return ngrams
+        cdef Py_ssize_t max_n = min(self.max_n, length)
+        for i in range(length + 1 - self.min_n):
+            for j in range(max_n, self.min_n-1, -1):
+                if j + i <= length:
+                    ngram = word[i:i + j]
+                    idx = self._ngram_index.get(ngram)
+                    if idx is None:
+                        continue
+                    if with_ngrams:
+                        ngrams.append((ngram, idx + offset))
+                    else:
+                        ngrams.append(idx + offset)
+        return ngrams
 
     def __call__(self, ngram: str) -> Optional[int]:
         return self.ngram_index.get(ngram)
 
     def __iter__(self) -> Iterable[str]:
-        return iter(self.ngrams)
+        return iter(self._ngrams)
 
     def __len__(self) -> int:
-        return len(self.ngram_index)
+        return len(self._ngram_index)

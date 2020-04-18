@@ -1,2 +1,2 @@
 [TYPECHECK]
-extension-pkg-whitelist=ffp.subwords.ngrams, ffp.subwords.hash_indexers
+extension-pkg-whitelist=ffp.subwords.ngrams, ffp.subwords.hash_indexers, ffp.subwords.explicit_indexer
