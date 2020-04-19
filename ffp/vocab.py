@@ -293,7 +293,7 @@ class SubwordVocab(Vocab):
         pass
 
     @staticmethod
-    def read_chunk(file: IO[bytes]) -> 'ffp.io.Chunk':
+    def read_chunk(file: IO[bytes]) -> ffp.io.Chunk:
         pass
 
     def write_chunk(self, file: IO[bytes]):
@@ -331,7 +331,7 @@ class BucketVocab(SubwordVocab):
         pass
 
     @staticmethod
-    def read_chunk(file: IO[bytes]) -> 'ffp.io.Chunk':
+    def read_chunk(file: IO[bytes]) -> ffp.io.Chunk:
         pass
 
     def write_chunk(self, file):
@@ -374,7 +374,7 @@ class FinalfusionBucketVocab(BucketVocab):
             filename,
             cutoff=Cutoff(30, mode='min_freq'),
             indexer: Optional[ffp.subwords.FinalfusionHashIndexer] = None,
-    ) -> Tuple['ffp.subwords.FinalfusionBucketVocab', List[int]]:
+    ) -> Tuple['FinalfusionBucketVocab', List[int]]:
         """
         Construct a Finalfusion Bucket Vocabulary from the given corpus.
         :param filename: file containing white-space seperated tokens.
@@ -510,7 +510,7 @@ class ExplicitVocab(SubwordVocab):
             [len(word) for word in b_words])
 
         b_ngrams = [bytes(ngram, "utf-8") for ngram in self.indexer]
-        b_len_ngrams = len(b_ngrams) * struct.calcsize("<I") + sum(
+        b_len_ngrams = len(b_ngrams) * struct.calcsize("<IQ") + sum(
             [len(ngram) for ngram in b_ngrams])
 
         chunk_length = struct.calcsize("<QQII") + b_len_words + b_len_ngrams
