@@ -2,29 +2,13 @@
 Finalfusion storage
 """
 
-import abc
 import struct
-from typing import IO, Tuple, List
+from typing import IO, Tuple
 
 import numpy as np
 
 import ffp.io
-
-
-class Storage(ffp.io.Chunk):
-    """
-    Common interface to finalfusion storage types.
-    """
-    @property
-    @abc.abstractmethod
-    def shape(self) -> Tuple[int, int]:
-        """
-        Get the shape of the storage
-        :return: int tuple containing (rows, cols)
-        """
-    @abc.abstractmethod
-    def __getitem__(self, key):
-        pass
+from ffp.storage.storage import Storage
 
 
 class NdArray(np.ndarray, Storage):
@@ -56,13 +40,6 @@ class NdArray(np.ndarray, Storage):
 
     @staticmethod
     def mmap_chunk(file) -> 'NdArray':
-        """
-        Mmaps the storage as read-only. This method positions `file` after the last element of the
-        buffer.
-
-        :param file: file containing the storage, positioned at the first element of the buffer.
-        :return: NdArray backed by the mmapped array
-        """
         rows, cols = NdArray._read_array_header(file)
         offset = file.tell()
         file.seek(rows * cols * struct.calcsize('f'), 1)
@@ -85,8 +62,7 @@ class NdArray(np.ndarray, Storage):
         rows, cols = struct.unpack("<QI", file.read(struct.calcsize("<QI")))
         type_id = ffp.io.TypeId(
             struct.unpack("<I", file.read(struct.calcsize("<I")))[0])
-        assert type_id == ffp.io.TypeId.f32, "Expected " + str(
-            ffp.io.TypeId.f32) + ", found: " + str(type_id)
+        ffp.io.TypeId.f32.match(type_id)
         file.seek(ffp.io.pad_float(file.tell()), 1)
         return rows, cols
 
@@ -106,53 +82,3 @@ class NdArray(np.ndarray, Storage):
         if isinstance(key, slice):
             return super().__getitem__(key)
         return super().__getitem__(key).view(np.ndarray)
-
-
-def load_storage(path: str, mmap=False) -> Storage:
-    """
-    Load Storage from the given finalfusion file
-    :param path: Path of file in finalfusion format
-    :param mmap: whether to mmap the storage
-    :return: Storage
-    """
-    storage_chunks = [
-        ffp.io.ChunkIdentifier.NdArray, ffp.io.ChunkIdentifier.QuantizedArray
-    ]
-    storage = _load(path, mmap, storage_chunks)
-    if storage is None:
-        raise ValueError("cannot find storage chunk")
-    return storage
-
-
-def load_ndarray(path: str, mmap: bool = False) -> 'NdArray':
-    """
-    Load an array chunk from the given file.
-    :param file: File containing array chunk in finalfusion format
-    :param mmap: whether to memory map the storage
-    :return: NdArray
-    """
-    storage = _load(path, mmap, [ffp.io.ChunkIdentifier.NdArray])
-    if storage is None:
-        raise ValueError("cannot find NdArray chunk")
-    return storage
-
-
-def _load(path: str, mmap: bool, targets: List[ffp.io.ChunkIdentifier]):
-    """
-    Read the first storae chunk specified in `target` from `filename`.
-    :param path: filename
-    :param targets: List of target chunks
-    :return: Storage
-    """
-    with open(path, "rb") as file:
-        chunk = ffp.io.find_chunk(file, targets)
-        if chunk is None:
-            return None
-        if chunk == ffp.io.ChunkIdentifier.NdArray:
-            if mmap:
-                return NdArray.mmap_chunk(file)
-            return NdArray.read_chunk(file)
-        if chunk == ffp.io.ChunkIdentifier.QuantizedArray:
-            raise NotImplementedError(
-                "Quantized storage is not yet implemented.")
-        raise ValueError("unknown storage type: " + str(chunk))

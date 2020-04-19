@@ -14,6 +14,7 @@ if need_cython:
                             Extension("ffp.subwords.explicit_indexer", ["ffp/subwords/explicit_indexer.pyx"])])
 else:
     extensions = [Extension("ffp.subwords.hash_indexers", ["ffp/subwords/hash_indexers.c"]),
+                  Extension("ffp.subwords.explicit_indexer", ["ffp/subwords/explicit_indexer.c"]),
                   Extension("ffp.subwords.ngrams", ["ffp/subwords/ngrams.c"])]
 
 NAME = 'ffp'

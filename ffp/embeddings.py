@@ -513,7 +513,5 @@ _VOCAB_READERS = {
 }
 
 _STORAGE_READERS = {
-    ffp.io.ChunkIdentifier.NdArray:
-    lambda file, mmap: ffp.storage.NdArray.mmap_chunk(file)
-    if mmap else ffp.storage.NdArray.read_chunk(file),
+    ffp.io.ChunkIdentifier.NdArray: ffp.storage.NdArray.load,
 }
