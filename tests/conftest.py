@@ -68,5 +68,21 @@ def embeddings_ft(tests_root):
 
 
 @pytest.fixture
+def embeddings_pq_memmap(tests_root):
+    yield ffp.load_finalfusion(os.path.join(tests_root, "data/pq.fifu"), True)
+
+
+@pytest.fixture
+def embeddings_pq_read(tests_root):
+    yield ffp.load_finalfusion(os.path.join(tests_root, "data/pq.fifu"), False)
+
+
+@pytest.fixture
+def pq_check(tests_root):
+    yield ffp.load_finalfusion(os.path.join(tests_root, "data/pq-check.fifu"),
+                               False)
+
+
+@pytest.fixture
 def tests_root():
     yield os.path.dirname(__file__)

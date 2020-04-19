@@ -138,6 +138,18 @@ def test_ff_embeddings_roundtrip_ff_buckets(bucket_vocab_embeddings_fifu):
     assert np.allclose(bucket_vocab_embeddings_fifu.norms, e2.norms)
 
 
+def test_embeddings_pq_mmap(pq_check, embeddings_pq_memmap):
+    embedding_pq = embeddings_pq_memmap.embedding("Berlin")
+    embedding_fifu = pq_check.embedding("Berlin")
+    assert np.allclose(embedding_fifu, embedding_pq, atol=0.3)
+
+
+def test_embeddings_pq_read(pq_check, embeddings_pq_read):
+    embedding_pq = embeddings_pq_read.embedding("Berlin")
+    embedding_fifu = pq_check.embedding("Berlin")
+    assert np.allclose(embedding_fifu, embedding_pq, atol=0.3)
+
+
 def test_embeddings_lookup(embeddings_fifu, vocab_array_tuple):
     matrix = vocab_array_tuple[1]
     matrix = matrix.squeeze() / np.linalg.norm(matrix, axis=1, keepdims=True)

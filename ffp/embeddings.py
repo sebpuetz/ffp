@@ -514,4 +514,5 @@ _VOCAB_READERS = {
 
 _STORAGE_READERS = {
     ffp.io.ChunkIdentifier.NdArray: ffp.storage.NdArray.load,
+    ffp.io.ChunkIdentifier.QuantizedArray: ffp.storage.QuantizedArray.load,
 }
