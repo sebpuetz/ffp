@@ -30,6 +30,26 @@ class ChunkIdentifier(IntEnum):
     FastTextSubwordVocab = 7
     ExplicitSubwordVocab = 8
 
+    def is_vocab(self):
+        """
+        Return whether the ChunkIdentifier refers to a vocabulary type.
+        @return: bool indicating whether the identifier refers to a vocab.
+        """
+        return self in [
+            ChunkIdentifier.SimpleVocab, ChunkIdentifier.BucketSubwordVocab,
+            ChunkIdentifier.FastTextSubwordVocab,
+            ChunkIdentifier.ExplicitSubwordVocab
+        ]
+
+    def is_storage(self):
+        """
+        Return whether the ChunkIdentifier refers to a storage type.
+        @return: bool indicating whether the identifier refers to a storage.
+        """
+        return self in [
+            ChunkIdentifier.QuantizedArray, ChunkIdentifier.NdArray
+        ]
+
 
 @unique
 class TypeId(IntEnum):
@@ -38,6 +58,15 @@ class TypeId(IntEnum):
     """
     u8 = 1
     f32 = 10
+
+    def match(self, other: 'TypeId'):
+        """
+        Ensures that the TypeIds match. Raises an AssertionError.
+        :param other: TypeId to match.
+        :raise: AssertionError if the TypeIds don't match.
+        """
+        assert self == other, "Expected " + str(self) + ", found: " + str(
+            other)
 
 
 class Chunk(ABC):

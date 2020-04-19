@@ -292,7 +292,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         return zip(self._vocab.words, self._storage)
 
 
-def load_finalfusion(path: str, mmap: bool = False) -> 'Embeddings':
+def load_finalfusion(path: str, mmap: bool = False) -> Embeddings:
     """
     Read embeddings from a file in finalfusion format.
     :param path: path
@@ -304,27 +304,17 @@ def load_finalfusion(path: str, mmap: bool = False) -> 'Embeddings':
         chunk_id, _ = ffp.io.read_chunk_header(file)
         embeddings = Embeddings()
         while True:
-            if chunk_id == ffp.io.ChunkIdentifier.NdArray:
-                if mmap:
-                    embeddings.storage = ffp.storage.NdArray.mmap_chunk(file)
-                else:
-                    embeddings.storage = ffp.storage.NdArray.read_chunk(file)
-            elif chunk_id == ffp.io.ChunkIdentifier.SimpleVocab:
-                embeddings.vocab = ffp.vocab.SimpleVocab.read_chunk(file)
-            elif chunk_id == ffp.io.ChunkIdentifier.BucketSubwordVocab:
-                embeddings.vocab = ffp.vocab.FinalfusionBucketVocab.read_chunk(
-                    file)
-            elif chunk_id == ffp.io.ChunkIdentifier.FastTextSubwordVocab:
-                embeddings.vocab = ffp.vocab.FastTextVocab.read_chunk(file)
-            elif chunk_id == ffp.io.ChunkIdentifier.ExplicitSubwordVocab:
-                embeddings.vocab = ffp.vocab.ExplicitVocab.read_chunk(file)
+            if chunk_id.is_storage():
+                embeddings.storage = _STORAGE_READERS[chunk_id](file, mmap)
+            elif chunk_id.is_vocab():
+                embeddings.vocab = _VOCAB_READERS[chunk_id](file)
             elif chunk_id == ffp.io.ChunkIdentifier.NdNorms:
                 embeddings.norms = ffp.norms.Norms.read_chunk(file)
             elif chunk_id == ffp.io.ChunkIdentifier.Metadata:
                 embeddings.metadata = ffp.metadata.Metadata.read_chunk(file)
             else:
                 chunk_id, _ = ffp.io.read_chunk_header(file)
-                raise IOError(str(chunk_id) + " is not yet supported.")
+                raise TypeError("Unknown chunk type: " + str(chunk_id))
             chunk_header = ffp.io.read_chunk_header(file)
             if chunk_header is None:
                 break
@@ -509,3 +499,21 @@ def _read_ft_vocab(file, buckets, min_n, max_n):
             raise ValueError("Non word entry", word)
     indexer = ffp.subwords.FastTextIndexer(buckets, min_n, max_n)
     return ffp.vocab.FastTextVocab(words, indexer)
+
+
+_VOCAB_READERS = {
+    ffp.io.ChunkIdentifier.SimpleVocab:
+    ffp.vocab.SimpleVocab.read_chunk,
+    ffp.io.ChunkIdentifier.BucketSubwordVocab:
+    ffp.vocab.FinalfusionBucketVocab.read_chunk,
+    ffp.io.ChunkIdentifier.FastTextSubwordVocab:
+    ffp.vocab.FastTextVocab.read_chunk,
+    ffp.io.ChunkIdentifier.ExplicitSubwordVocab:
+    ffp.vocab.ExplicitVocab.read_chunk,
+}
+
+_STORAGE_READERS = {
+    ffp.io.ChunkIdentifier.NdArray:
+    lambda file, mmap: ffp.storage.NdArray.mmap_chunk(file)
+    if mmap else ffp.storage.NdArray.read_chunk(file),
+}
