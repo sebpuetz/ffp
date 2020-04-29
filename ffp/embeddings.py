@@ -313,7 +313,6 @@ def load_finalfusion(path: str, mmap: bool = False) -> Embeddings:
             elif chunk_id == ffp.io.ChunkIdentifier.Metadata:
                 embeddings.metadata = ffp.metadata.Metadata.read_chunk(file)
             else:
-                chunk_id, _ = ffp.io.read_chunk_header(file)
                 raise TypeError("Unknown chunk type: " + str(chunk_id))
             chunk_header = ffp.io.read_chunk_header(file)
             if chunk_header is None:
@@ -502,14 +501,14 @@ def _read_ft_vocab(file, buckets, min_n, max_n):
 
 
 _VOCAB_READERS = {
-    ffp.io.ChunkIdentifier.SimpleVocab:
-    ffp.vocab.SimpleVocab.read_chunk,
+    ffp.io.ChunkIdentifier.SimpleVocab: ffp.vocab.SimpleVocab.read_chunk,
     ffp.io.ChunkIdentifier.BucketSubwordVocab:
     ffp.vocab.FinalfusionBucketVocab.read_chunk,
     ffp.io.ChunkIdentifier.FastTextSubwordVocab:
     ffp.vocab.FastTextVocab.read_chunk,
     ffp.io.ChunkIdentifier.ExplicitSubwordVocab:
     ffp.vocab.ExplicitVocab.read_chunk,
+    ffp.io.ChunkIdentifier.PrunedVocab: ffp.vocab.PrunedVocab.read_chunk,
 }
 
 _STORAGE_READERS = {

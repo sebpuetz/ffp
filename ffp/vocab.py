@@ -47,40 +47,27 @@ class Vocab(ffp.io.Chunk):
     """
     Common interface to finalfusion vocabularies.
     """
-    def __init__(self,
-                 words: List[str],
-                 index: Optional[Dict[str, int]] = None):
-        if index is None:
-            index = dict((word, idx) for idx, word in enumerate(words))
-        if len(index) != len(words):
-            raise ValueError("Words and index need to have same length")
-        self._index = index
-        self._words = words
-
     @property
+    @abc.abstractmethod
     def words(self) -> list:
         """
         Get the list of in-vocabulary words
         :return: list of in-vocabulary words
         """
-        return self._words
-
     @property
+    @abc.abstractmethod
     def word_index(self) -> dict:
         """
         Get the dict holding the word-index mapping.
         :return: dict holding the word-index mapping
         """
-        return self._index
-
     @property
+    @abc.abstractmethod
     def idx_bound(self) -> int:
         """
         Get the exclusive upper bound of indices this vocabulary covers.
         :return: exclusive upper bound of indices
         """
-        return len(self)
-
     @abc.abstractmethod
     def idx(self, item: str, default: Union[list, int, None] = None
             ) -> Optional[Union[list, int]]:
@@ -204,7 +191,12 @@ class SubwordVocab(Vocab):
                  indexer: Union[ffp.subwords.FinalfusionHashIndexer, ffp.
                                 subwords.FastTextIndexer],
                  index: Optional[Dict[str, int]] = None):
-        super().__init__(words, index)
+        if index is None:
+            index = dict((word, idx) for idx, word in enumerate(words))
+        if len(index) != len(words):
+            raise ValueError("Words and index need to have same length")
+        self._index = index
+        self._words = words
         self._indexer = indexer
 
     def idx(self, item, default=None):
@@ -215,6 +207,14 @@ class SubwordVocab(Vocab):
         if subwords:
             return subwords
         return default
+
+    @property
+    def words(self) -> list:
+        return self._words
+
+    @property
+    def word_index(self) -> dict:
+        return self._index
 
     @property
     def idx_bound(self) -> int:
@@ -532,6 +532,28 @@ class SimpleVocab(Vocab):
     """
     Simple vocabulary without subword indices.
     """
+    def __init__(self,
+                 words: List[str],
+                 index: Optional[Dict[str, int]] = None):
+        if index is None:
+            index = dict((word, idx) for idx, word in enumerate(words))
+        if len(index) != len(words):
+            raise ValueError("Words and index need to have same length")
+        self._index = index
+        self._words = words
+
+    @property
+    def words(self) -> list:
+        return self._words
+
+    @property
+    def word_index(self) -> dict:
+        return self._index
+
+    @property
+    def idx_bound(self) -> int:
+        return len(self)
+
     @staticmethod
     def from_corpus(filename, cutoff: Cutoff = Cutoff(30, mode="min_freq")):
         """
@@ -571,6 +593,105 @@ class SimpleVocab(Vocab):
         return self.word_index.get(item, default)
 
 
+class PrunedVocab(Vocab):
+    """
+    Wrapper for pruned vocabularies.
+
+    Pruned vocabularies introduce an indirection from the original index of an
+    item to the index assigned by the pruning procedure.
+    """
+    def __init__(self, vocab: Vocab, mapping: list):
+        self._vocab = vocab
+        self._mapping = mapping
+        assert len(self._mapping
+                   ) == vocab.idx_bound, "Mapping size does not match vocab"
+        n_mappings = len(set(self._mapping))
+        assert min(mapping) == 0 and max(
+            mapping
+        ) + 1 - n_mappings == 0, "Mapping needs to cover 0..n_mappings: bounds {} {} {}".format(
+            min(mapping), max(mapping), n_mappings)
+        self._size = n_mappings
+
+    def idx(self, item: str, default: Union[list, int, None] = None
+            ) -> Optional[Union[list, int]]:
+        idx = self._vocab.idx(item, default)
+        if isinstance(idx, list):
+            return [self._mapping[i] for i in idx]
+        if idx is not None:
+            return self._mapping[idx]
+
+        return None
+
+    def __len__(self):
+        return len(self._vocab)
+
+    @property
+    def idx_bound(self) -> int:
+        return self._size
+
+    @property
+    def words(self) -> list:
+        return self._vocab.words
+
+    @property
+    def word_index(self) -> dict:
+        return self._vocab.word_index
+
+    def __getitem__(self, item):
+        val = self._vocab[item]
+        if isinstance(val, int):
+            return self._mapping[val]
+        return [self._mapping[idx] for idx in val]
+
+    def __eq__(self, other):
+        if not isinstance(other, type(self)):
+            return False
+        if self._size != other._size:
+            return False
+        if self._vocab != other._vocab:
+            return False
+        return self._mapping == other._mapping
+
+    @staticmethod
+    def chunk_identifier() -> ffp.io.ChunkIdentifier:
+        return ffp.io.ChunkIdentifier.PrunedVocab
+
+    @staticmethod
+    def read_chunk(file: IO[bytes]) -> 'PrunedVocab':
+        chunk_length = struct.unpack("<Q", file.read(8))[0]
+        mapping = list(
+            struct.unpack("<" + "Q" * chunk_length,
+                          file.read(chunk_length * 8)))
+        chunk_ids = [
+            ffp.io.ChunkIdentifier.SimpleVocab,
+            ffp.io.ChunkIdentifier.BucketSubwordVocab,
+            ffp.io.ChunkIdentifier.ExplicitSubwordVocab,
+            ffp.io.ChunkIdentifier.FastTextSubwordVocab,
+        ]
+        chunk = ffp.io.find_chunk(file, chunk_ids)
+        if chunk == ffp.io.ChunkIdentifier.SimpleVocab:
+            vocab = SimpleVocab.read_chunk(file)
+        elif chunk == ffp.io.ChunkIdentifier.BucketSubwordVocab:
+            vocab = FinalfusionBucketVocab.read_chunk(file)
+        elif chunk == ffp.io.ChunkIdentifier.ExplicitSubwordVocab:
+            vocab = ExplicitVocab.read_chunk(file)
+        elif chunk == ffp.io.ChunkIdentifier.FastTextSubwordVocab:
+            vocab = FastTextVocab.read_chunk(file)
+        else:
+            raise IOError("unknown vocab type: " + str(chunk))
+        return PrunedVocab(vocab, mapping)
+
+    def write_chunk(self, file: IO[bytes]):
+        file.write(struct.pack("<I", int(self.chunk_identifier())))
+        # 8 bytes per index and 8 byte for the length of the mapping
+        n_mappings = len(self._mapping)
+        chunk_length = n_mappings * struct.calcsize("<Q") + struct.calcsize(
+            "<Q")
+        file.write(struct.pack("<QQ", chunk_length, n_mappings))
+        file.write(struct.pack("<" + "Q" * n_mappings, *self._mapping))
+        self._vocab.write_chunk(file)
+
+
 def load_vocab(path: str) -> Vocab:
     """
     Read a vocabulary from the given finalfusion file.
@@ -578,6 +699,7 @@ def load_vocab(path: str) -> Vocab:
     :return: The first vocabulary found in the file.
     """
     vocab_chunks = [
+        ffp.io.ChunkIdentifier.PrunedVocab,
         ffp.io.ChunkIdentifier.SimpleVocab,
         ffp.io.ChunkIdentifier.BucketSubwordVocab,
         ffp.io.ChunkIdentifier.ExplicitSubwordVocab,
@@ -681,6 +803,8 @@ def _read(path: str, target: List[ffp.io.ChunkIdentifier]):
         chunk = ffp.io.find_chunk(file, target)
         if chunk is None:
             return None
+        if chunk == ffp.io.ChunkIdentifier.PrunedVocab:
+            return PrunedVocab.read_chunk(file)
         if chunk == ffp.io.ChunkIdentifier.SimpleVocab:
             return SimpleVocab.read_chunk(file)
         if chunk == ffp.io.ChunkIdentifier.BucketSubwordVocab:

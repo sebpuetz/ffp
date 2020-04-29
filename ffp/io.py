@@ -29,6 +29,7 @@ class ChunkIdentifier(IntEnum):
     NdNorms = 6
     FastTextSubwordVocab = 7
     ExplicitSubwordVocab = 8
+    PrunedVocab = 9
 
     def is_vocab(self):
         """
@@ -37,7 +38,7 @@ class ChunkIdentifier(IntEnum):
         """
         return self in [
             ChunkIdentifier.SimpleVocab, ChunkIdentifier.BucketSubwordVocab,
-            ChunkIdentifier.FastTextSubwordVocab,
+            ChunkIdentifier.PrunedVocab, ChunkIdentifier.FastTextSubwordVocab,
             ChunkIdentifier.ExplicitSubwordVocab
         ]
 

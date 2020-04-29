@@ -1,5 +1,6 @@
 import os
 
+import numpy as np
 import pytest
 import ffp
 import tempfile
@@ -92,6 +93,36 @@ def test_ff_buckets_roundtrip(tests_root):
         os.path.join(tests_root, "data", "ff_buckets.fifu"))
     v.write(filename)
     assert v == ffp.vocab.load_vocab(filename)
+
+
+def test_pruned(tests_root):
+    tmp_dir = tempfile.gettempdir()
+    filename = os.path.join(tmp_dir, "write_ff_buckets.fifu")
+    v = ffp.vocab.load_vocab(
+        os.path.join(tests_root, "data", "ff_buckets.fifu"))
+    with pytest.raises(AssertionError):
+        _ = ffp.vocab.PrunedVocab(v, [1] * v.idx_bound)
+    with pytest.raises(AssertionError):
+        _ = ffp.vocab.PrunedVocab(v, [0] * (v.idx_bound + 1))
+    pv = ffp.vocab.PrunedVocab(v, list(range(v.idx_bound)))
+    for w, w2 in zip(v, pv):
+        assert w == w2
+        assert v[w] == pv[w2]
+    assert np.all(
+        v["definitely not in vocab"] == pv["definitely not in vocab"])
+    mapping = [0] * v.idx_bound
+    _ = ffp.vocab.PrunedVocab(v, mapping)
+    cur_idx = 0
+    for i in range(v.idx_bound):
+        if np.random.uniform(0, 1) > 0.5:
+            mapping[i] = np.random.randint(0, cur_idx + 1)
+        else:
+            mapping[i] = cur_idx
+            cur_idx += 1
+    pv = ffp.vocab.PrunedVocab(v, mapping)
+    pv.write(filename)
+    pv2 = ffp.load_vocab(filename)
+    assert np.all(pv == pv2)
 
 
 def test_ff_buckets_lookup(tests_root):
