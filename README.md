@@ -1,12 +1,12 @@
 # ffp
 
-Interface to [finalfusion](https://finalfusion.github.io) written in (almost) pure Python. `ffp` supports reading from various embedding formats and more liberal construction of embeddings from components compared to the other `finalfusion` interfaces. Lots of pretrained [finalfrontier](https://github.com/finalfusion/finalfrontier/) embeddings are available [here](https://finalfusion.github.io/pretrained), fastText embeddings converted to finalfusion can be found [here](http://www.sfs.uni-tuebingen.de/a3-public-data/finalfusion-fasttext/)  
+Interface to [finalfusion](https://finalfusion.github.io) written in (almost) pure Python. `ffp` supports reading from various embedding formats and more liberal construction of embeddings from components compared to the other `finalfusion` interfaces. Lots of pretrained [finalfrontier](https://github.com/finalfusion/finalfrontier/) embeddings are available [here](https://finalfusion.github.io/pretrained), fastText embeddings converted to finalfusion can be found [here](http://www.sfs.uni-tuebingen.de/a3-public-data/finalfusion-fasttext/)
 
 This is an early version of `ffp`, feedback is very much appreciated!
 
 ## Features
 
-`ffp` supports most widely used embedding formats, currently not supported are fastText embeddings, those can be converted to the compatible `finalfusion` format through [finalfusion-utils](https://github.com/finalfusion/finalfusion-utils). Apart from  quantized storage, all `finalfusion` chunks can be read.
+`ffp` supports reading most widely used embedding formats, including finalfusion, text(-dims), word2vec binary and fastText. All `finalfusion` chunks are supported by `ffp`, including quantized storages.
 
 `ffp` provides construction, reading and writing of single `finalfusion` chunks, i.e., vocabularies, storage, norms, etc. can be read from or written to a `finalfusion` file in any combination. There are no assumptions about what constitutes a `finalfusion` file other than having at least a single chunk.
 
@@ -14,11 +14,13 @@ This is an early version of `ffp`, feedback is very much appreciated!
 
 Currently supported file formats:
 * finalfusion
+* fastText
 * text(-dims)
 * word2vec binary
 
-Currently supported Chunks:
+Currently supported `finalfusion` Chunks:
 * NdArray (mmap, in-memory)
+* QuantizedStorage (mmap, in-memory)
 * all vocabulary types
 * Metadata
 * Norms
