@@ -11,18 +11,170 @@ from typing import IO, Tuple, Optional
 
 import numpy as np
 
-from ffp.io import _pad_float32, ChunkIdentifier, TypeId, FinalfusionFormatError, find_chunk
+from ffp.io import _pad_float32, ChunkIdentifier, TypeId, FinalfusionFormatError, find_chunk, \
+    _read_binary, _write_binary
 from ffp.storage.storage import Storage
+
+
+class PQ:
+    """
+    Product Quantizer
+
+    Product Quantizers are vector quantizers which decompose high dimensional vector
+    spaces into subspaces. Each of these subspaces is a slice of the the original
+    vector space. Embeddings are quantized by assigning their ith slice to the closest
+    centroid.
+
+    Product Quantizers can reconstruct vectors by concatenating the slices of the
+    quantized vector.
+    """
+    def __init__(self, quantizers: np.ndarray,
+                 projection: Optional[np.ndarray]):
+        """
+        Initializes a Product Quantizer.
+
+        Parameters
+        ----------
+        quantizers : np.ndarray
+            3-d ndarray with dtype uint8
+        projection : np.ndarray, optional
+            Projection matrix, must be a square matrix with shape
+            `[reconstructed_len, reconstructed_len]`
+
+        Raises
+        ------
+        AssertionError
+            If the projection shape does not match the `reconstructed_len`
+        """
+        self._quantizers = quantizers
+        self._reconstructed_len = quantizers.shape[0] * quantizers.shape[2]
+        if projection is not None:
+            assert projection.shape[
+                0] == self._reconstructed_len == projection.shape[1]
+        self._projection = projection
+
+    @property
+    def n_centroids(self) -> int:
+        """
+        Number of centroids per quantizer.
+
+        Returns
+        -------
+        n_centroids : int
+             The number of centroids per quantizer.
+        """
+        return self._quantizers.shape[1]
+
+    @property
+    def projection(self) -> Optional[np.ndarray]:
+        """
+        Projection matrix.
+
+        Returns
+        -------
+        projection : np.ndarray, optional
+            Projection Matrix (2-d numpy array with datatype float32) or None.
+        """
+        return self._projection
+
+    @property
+    def reconstructed_len(self) -> int:
+        """
+        Reconstructed length.
+
+        Returns
+        -------
+        reconstructed_len : int
+            Length of the reconstructed vectors.
+        """
+        return self._reconstructed_len
+
+    @property
+    def subquantizers(self) -> np.ndarray:
+        """
+        Get the quantizers.
+
+        Returns a 3-d array with shape
+        `quantizers * n_centroids * reconstructed_len / quantizers`
+
+        Returns
+        -------
+        quantizers : np.ndarray
+            3-d np.ndarray with dtype=np.uint8
+        @return: 3d tensor of quantizers
+        """
+        return self._quantizers
+
+    def reconstruct(self, quantized: np.ndarray,
+                    out: np.ndarray = None) -> np.ndarray:
+        """
+        Reconstruct vectors.
+
+        Input
+
+        Parameters
+        ----------
+        quantized : np.ndarray
+            Batch of quantized vectors. 2-d np.ndarray with integers required.
+        out : np.ndarray, optional
+            2-d np.ndarray to write the output into.
+
+        Returns
+        -------
+        out : np.ndarray
+            Batch of reconstructed vectors.
+
+        Raises
+        ------
+        AssertionError
+            If `out` is passed and its last dimension does not match `reconstructed_len` or its
+            first `n-1` dimensions do not match the first `n-1` dimensions of `quantized`.
+        """
+        quantizers_range = np.arange(self._quantizers.shape[0])
+        if out is None:
+            if quantized.ndim == 1:
+                out_shape = self._reconstructed_len
+            else:
+                out_shape = (*quantized.shape[:-1], self._reconstructed_len)
+            out = self._quantizers[quantizers_range, quantized].reshape(
+                out_shape)
+        else:
+            assert out.shape[:-1] == quantized.shape[:-1]
+            assert out.shape[-1] == self._reconstructed_len
+            out[:] = self._quantizers[quantizers_range, quantized].reshape(
+                out.shape)
+        if self.projection is not None:
+            out.dot(self._projection.T, out=out)
+        return out
 
 
 class QuantizedArray(Storage):
     """
     QuantizedArray storage.
 
-    The QuantizedArray storage wraps a numpy array of quantized embeddings,
-    optionally corresponding norms and a product quantizer.
+    QuantizedArrays support slicing, indexing with integers, lists of integers and arbitrary
+    dimensional integer arrays. Slicing a QuantizedArray returns a new QuantizedArray but does not
+    copy any buffers.
+
+    QuantizedArrays offer two ways of indexing:
+
+    1. Through the `__getitem__` method:
+        * passing a slice returns a new QuantizedArray.
+        * passing an integer returns a single embedding, lists and arrays return ndims + 1
+          dimensional embeddings.
+    2. Through the `embedding` method:
+        * embeddings can be written to an output buffer by providing the `out` parameter.
+        * passing a slice returns a matrix holding **reconstructed** embeddings.
+        * otherwise, this method behaves like `__getitem__`
+
+    A QuantizedArray can be treated as numpy.ndarray through the numpy.asarray function.
+    This restores the original vector space and copies it to a new buffer.
+
+    Using common numpy functions on a QuantizedArray will produce a regular ndarray in the process
+    and is therefore an expensive operation.
     """
-    def __init__(self, pq, quantized_embeddings, norms):
+    def __init__(self, pq: PQ, quantized_embeddings: np.ndarray,
+                 norms: Optional[np.ndarray]):
         super().__init__()
         self._quantizer = pq
         self._quantized_embeddings = quantized_embeddings
@@ -33,71 +185,88 @@ class QuantizedArray(Storage):
         return self._quantized_embeddings.shape[
             0], self._quantizer.reconstructed_len
 
-    def __getitem__(self, key):
-        if key is None:
-            raise TypeError("None is not a valid key.")
-        quantized = self._quantized_embeddings[key]
-        if isinstance(key, list):
-            return self._quantizer.reconstruct_batch(quantized)
-        return self._quantizer.reconstruct_vector(quantized)
+    def embedding(self, key, out: np.ndarray = None):
+        """
+        Get embeddings.
 
-    def __iter__(self):
-        return map(self._quantizer.reconstruct_vector,
-                   self._quantized_embeddings)
+        * if `key` is an integer, a single reconstructed embedding is returned.
+        * if `key` is a list of integers or a slice, a matrix of reconstructed embeddings is
+          returned.
+        * if `key` is an n-dimensional array, a tensor with reconstructed embeddings is returned.
+          This tensor has one new axis in the last dimension containing the embeddings.
+
+        If `out` is specified, the reconstruction is written to this buffer.
+
+        Parameters
+        ----------
+        key : int, list, np.ndarray, slice
+            Key specifying which embeddings to retrieve.
+        out : np.ndarray
+            Array to reconstruct the embeddings into.
+            * If `key` is a list or slice, `out` needs to be a `len(key) * reconstructed_len`
+              matrix.
+            * If `key` is an integer, `out`needs to be an array wit `reconstructed_len` entries.
+            * If `key` is an n-dimensional array, `out` needs to match the dimensions of `key` and
+              have an additional `reconstructed_len` sized axis in the last dimension.
+
+        Returns
+        -------
+        reconstruction : np.ndarray
+            The reconstructed embedding or embeddings.
+        """
+        quantized = self._quantized_embeddings[key]
+        out = self._quantizer.reconstruct(quantized, out=out)
+        return np.multiply(self._norms[key, None], out, out=out)
 
     @property
     def quantized_len(self) -> int:
         """
-        Returns the length of the quantized embeddings.
+        Length of the quantized embeddings.
+
+        Returns
+        -------
+        quantized_len : int
+            Length of quantized embeddings.
         """
         return self._quantized_embeddings.shape[1]
+
+    @property
+    def quantizer(self):
+        """
+        Get the quantizer.
+
+        Returns
+        -------
+        pq : PQ
+            The Product Quantizer.
+        """
+        return self._quantizer
+
+    def __getitem__(self, key):
+        if key is None:
+            raise TypeError("None is not a valid key.")
+        if isinstance(key, slice):
+            quantizer = self.quantizer
+            sliced_embeds = self._quantized_embeddings[key]
+            norms = None
+            if self._norms is not None:
+                norms = self._norms[key]
+            return QuantizedArray(quantizer, sliced_embeds, norms)
+        return self.embedding(key)
+
+    def __iter__(self):
+        return map(self._quantizer.reconstruct, self._quantized_embeddings)
+
+    def __len__(self):
+        return len(self._quantized_embeddings)
+
+    def __array__(self):
+        return self._norms[:, None] * self._quantizer.reconstruct(
+            self._quantized_embeddings)
 
     @staticmethod
     def chunk_identifier() -> ChunkIdentifier:
         return ChunkIdentifier.QuantizedArray
-
-    @staticmethod
-    def _read_quantized_header(file: IO[bytes]):
-        projection = struct.unpack("<I", file.read(4))[0] != 0
-        read_norms = struct.unpack("<I", file.read(4))[0] != 0
-        quantized_len = struct.unpack("<I", file.read(4))[0]
-        reconstructed_len = struct.unpack("<I", file.read(4))[0]
-        n_centroids = struct.unpack("<I", file.read(4))[0]
-        n_embeddings = struct.unpack("<Q", file.read(8))[0]
-        assert reconstructed_len % quantized_len == 0
-        type_id = TypeId(
-            struct.unpack("<I", file.read(struct.calcsize("<I")))[0])
-        if TypeId.u8 != type_id:
-            raise FinalfusionFormatError(
-                f"Invalid Type, expected {str(TypeId.u8)}, got {type_id}")
-        type_id = TypeId(
-            struct.unpack("<I", file.read(struct.calcsize("<I")))[0])
-        if TypeId.f32 != type_id:
-            raise FinalfusionFormatError(
-                f"Invalid Type, expected {str(TypeId.f32)}, got {type_id}")
-        file.seek(_pad_float32(file.tell()), 1)
-        if projection:
-            projection = np.fromfile(file,
-                                     count=reconstructed_len *
-                                     reconstructed_len,
-                                     dtype=np.float32)
-            projection = projection.reshape(
-                (reconstructed_len, reconstructed_len))
-        else:
-            projection = None
-        quantizer_shape = (quantized_len, n_centroids,
-                           reconstructed_len // quantized_len)
-        quantizers = np.fromfile(file,
-                                 count=quantized_len * n_centroids *
-                                 (reconstructed_len // quantized_len),
-                                 dtype=np.float32)
-        quantizers = quantizers.reshape(quantizer_shape)
-        if read_norms:
-            norms = np.fromfile(file, count=n_embeddings, dtype=np.float32)
-        else:
-            norms = None
-        quantizer = PQ(quantizers, projection)
-        return quantizer, (n_embeddings, quantized_len), norms
 
     @staticmethod
     def read_chunk(file) -> 'QuantizedArray':
@@ -125,7 +294,6 @@ class QuantizedArray(Storage):
         return QuantizedArray(quantizer, quantized_embeddings, norms)
 
     def write_chunk(self, file: IO[bytes]):
-        file.write(struct.pack("<I", int(self.chunk_identifier())))
         padding = _pad_float32(file.tell())
         chunk_len = struct.calcsize("<IIIIIQII") + padding
         proj = self._quantizer.projection is not None
@@ -137,96 +305,65 @@ class QuantizedArray(Storage):
         if norms:
             chunk_len += struct.calcsize("<f") * self._norms.size
         chunk_len += self._quantized_embeddings.size
-        file.write(struct.pack("<Q", chunk_len))
-        file.write(
-            struct.pack("<IIIII", proj, norms, self.quantized_len,
-                        self.shape[1], self._quantizer.n_centroids))
-        file.write(struct.pack("<Q", self.shape[0]))
-        file.write(struct.pack("<II", int(TypeId.u8), int(TypeId.f32)))
+        chunk_header = (int(self.chunk_identifier()), chunk_len, proj, norms,
+                        self.quantized_len, self.shape[1],
+                        self.quantizer.n_centroids, self.shape[0],
+                        int(TypeId.u8), int(TypeId.f32))
+        _write_binary(file, "<IQIIIIIQII", *chunk_header)
         file.write(struct.pack("x" * padding))
         if proj:
-            file.write(self._quantizer.projection.tobytes())
-        file.write(self._quantizer.subquantizers.tobytes())
+            self.quantizer.projection.tofile(file)
+        self.quantizer.subquantizers.tofile(file)
         if norms:
-            file.write(self._norms.tobytes())
-        file.write(self._quantized_embeddings.tobytes())
+            self._norms.tofile(file)
+        self._quantized_embeddings.tofile(file)
 
-
-class PQ:
-    """
-    Product Quantizer
-    """
-    def __init__(self, quantizers, projection):
-        self._quantizers = quantizers
-        self._reconstructed_len = quantizers.shape[0] * quantizers.shape[2]
-        if projection is not None:
-            assert projection.shape[
-                0] == self._reconstructed_len == projection.shape[1]
-        self._projection = projection
-
-    @property
-    def n_centroids(self) -> int:
+    @staticmethod
+    def _read_quantized_header(
+            file: IO[bytes]
+    ) -> Tuple[PQ, Tuple[int, int], Optional[np.ndarray]]:
         """
-        Number of centroids per subquantizer.
-        @return: number of centroids
+        Helper method to read the header of a quantized array chunk.
+        Returns a tuple containing PQ, quantized_shape and optional norms.
         """
-        return self._quantizers.shape[1]
-
-    @property
-    def projection(self) -> Optional[np.ndarray]:
-        """
-        Projection matrix
-        @return: None or numpy.ndarray of shape reconstructed_len^2
-        """
-        return self._projection
-
-    @property
-    def reconstructed_len(self) -> int:
-        """
-        Reconstructed length
-        @return: Length of reconstructed embeddings
-        """
-        return self._reconstructed_len
-
-    @property
-    def subquantizers(self) -> np.ndarray:
-        """
-        Quantizers tensor of shape:
-        `quantizers * n_centroids * reconstructed_len / quantizers`
-        @return: 3d tensor of quantizers
-        """
-        return self._quantizers
-
-    def reconstruct_batch(self, quantized) -> np.ndarray:
-        """
-        Reconstruct a batch of vectors.
-        @param quantized: Matrix of quantized embeddings.
-        @return: Matrix of reconstructed embeddings.
-        """
-        reconstructed = np.zeros((quantized.shape[0], self.reconstructed_len),
-                                 dtype=np.float32)
-        for i in range(reconstructed.shape[0]):  # pylint: disable=unsubscriptable-object
-            self.reconstruct_vector(quantized[i], reconstructed[i, :])
-        return reconstructed
-
-    def reconstruct_vector(self, quantized, out=None) -> np.ndarray:
-        """
-        Reconstruct a single vector.
-        @param quantized: Quantized embedding vector.
-        @param out: Optional array to write the reconstructed vector to.
-        @return: the reconstructed vector.
-        """
-        if out is None:
-            out = self._quantizers[np.arange(self._quantizers.shape[0]
-                                             ), quantized].reshape(
-                                                 self._reconstructed_len)
+        projection = _read_binary(file, '<I')[0] != 0
+        read_norms = _read_binary(file, '<I')[0] != 0
+        quantized_len = _read_binary(file, '<I')[0]
+        reconstructed_len = _read_binary(file, '<I')[0]
+        n_centroids = _read_binary(file, '<I')[0]
+        n_embeddings = _read_binary(file, '<Q')[0]
+        assert reconstructed_len % quantized_len == 0
+        type_id = _read_binary(file, '<I')[0]
+        if int(TypeId.u8) != type_id:
+            raise FinalfusionFormatError(
+                f"Invalid Type, expected {str(TypeId.u8)}, got {type_id}")
+        type_id = _read_binary(file, '<I')[0]
+        if int(TypeId.f32) != type_id:
+            raise FinalfusionFormatError(
+                f"Invalid Type, expected {str(TypeId.f32)}, got {type_id}")
+        file.seek(_pad_float32(file.tell()), 1)
+        if projection:
+            projection = np.fromfile(file,
+                                     count=reconstructed_len *
+                                     reconstructed_len,
+                                     dtype=np.float32)
+            projection_shape = (reconstructed_len, reconstructed_len)
+            projection = projection.reshape(projection_shape)
         else:
-            out[:] = self._quantizers[np.arange(self._quantizers.shape[0]
-                                                ), quantized].reshape(
-                                                    self._reconstructed_len)
-        if self.projection is not None:
-            out.dot(self._projection.T, out=out)
-        return out
+            projection = None
+        quantizer_shape = (quantized_len, n_centroids,
+                           reconstructed_len // quantized_len)
+        quantizers = np.fromfile(file,
+                                 count=quantized_len * n_centroids *
+                                 (reconstructed_len // quantized_len),
+                                 dtype=np.float32)
+        quantizers = quantizers.reshape(quantizer_shape)
+        if read_norms:
+            norms = np.fromfile(file, count=n_embeddings, dtype=np.float32)
+        else:
+            norms = None
+        quantizer = PQ(quantizers, projection)
+        return quantizer, (n_embeddings, quantized_len), norms
 
 
 def load_quantized_array(path: str, mmap: bool = False) -> QuantizedArray:

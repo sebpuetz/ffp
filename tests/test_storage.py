@@ -71,6 +71,57 @@ def test_array_roundtrip_mmap(tests_root):
     assert np.allclose(s, s2)
 
 
+def test_quantized_array_read(tests_root, pq_check):
+    s = ffp.storage.load_quantized_array(
+        os.path.join(tests_root, "data/pq.fifu"))
+    for i, (check, e) in enumerate(zip(pq_check.storage, s)):
+        out = np.zeros_like(check)
+        assert np.allclose(check, e, atol=0.05)
+        out2 = s.embedding(i, out)
+        assert out is out2
+        assert np.allclose(e, out2)
+    out = np.zeros_like(pq_check.storage)
+    out2 = s.embedding(slice(None, None), out=out)
+    assert out is out2
+    assert np.allclose(s, pq_check.storage, atol=0.05)
+    assert np.allclose(out, pq_check.storage, atol=0.05)
+    # works with arrays
+    out2 = s.embedding(np.arange(len(s)), out=out)
+    assert out is out2
+    # works with matrices
+    out = np.zeros((2, *s.shape))
+    key = np.vstack((np.arange(len(s)), np.arange(len(s)))).reshape((2, -1))
+    out2 = s.embedding(key, out=out)
+    assert out is out2
+    assert np.allclose(out,
+                       np.vstack((pq_check.storage, pq_check.storage)).reshape(
+                           (2, *pq_check.storage.shape)),
+                       atol=0.05)
+    # works with tensors
+    out = np.zeros_like(pq_check.storage)[None, None]
+    out2 = s.embedding(np.arange(len(s))[None, None], out=out)
+    assert out is out2
+
+
+def test_quantized_array_mmap(tests_root, pq_check):
+    s = ffp.storage.load_quantized_array(os.path.join(tests_root,
+                                                      "data/pq.fifu"),
+                                         mmap=True)
+    for check, e in zip(pq_check.storage, s):
+        assert np.allclose(check, e, atol=0.05)
+    assert np.allclose(s, pq_check.storage, atol=0.05)
+
+
+def test_quantized_array_roundtrip(tests_root, tmp_path, pq_check):
+    s = ffp.storage.load_quantized_array(
+        os.path.join(tests_root, "data/pq.fifu"))
+    outfile = tmp_path / "pq_storage.fifu"
+    s.write(outfile)
+    s2 = ffp.storage.load_quantized_array(outfile)
+    assert np.allclose(s, s2)
+    assert np.allclose(s, pq_check.storage, atol=0.05)
+
+
 def test_from_matrix():
     matrix = np.tile(np.arange(0, 10, dtype=np.float32), (10, 1))
     s = ffp.storage.NdArray(matrix)
@@ -138,6 +189,43 @@ def test_slicing():
             val = s[::step]
         with ctx:
             assert np.allclose(matrix[::step], val)
+
+
+def test_quantized_array_slices(tests_root, pq_check):
+    s = ffp.storage.load_quantized_array(
+        os.path.join(tests_root, "data/pq.fifu"))
+    assert np.allclose(s, pq_check.storage, atol=0.05)
+
+    for _ in range(250):
+        upper = np.random.randint(-len(s) * 3, len(s) * 3)
+        lower = np.random.randint(-len(s) * 3, len(s) * 3)
+        step = np.random.randint(-len(s) * 3, len(s) * 3)
+        ctx = pytest.raises(ValueError) if step == 0 else contextlib.suppress()
+
+        assert np.allclose(pq_check.storage[:upper], s[:upper], atol=0.05)
+        assert np.allclose(pq_check.storage[:upper],
+                           s.embedding(slice(None, upper)),
+                           atol=0.05)
+        assert np.allclose(pq_check.storage[lower:upper],
+                           s[lower:upper],
+                           atol=0.05)
+        assert np.allclose(pq_check.storage[lower:upper],
+                           s.embedding(slice(lower, upper)),
+                           atol=0.05)
+        with ctx:
+            val = s[lower:upper:step]
+        with ctx:
+            assert np.allclose(pq_check.storage[lower:upper:step],
+                               val,
+                               atol=0.05)
+        with ctx:
+            val = s[:upper:step]
+        with ctx:
+            assert np.allclose(pq_check.storage[:upper:step], val, atol=0.05)
+        with ctx:
+            val = s[::step]
+        with ctx:
+            assert np.allclose(pq_check.storage[::step], val, atol=0.05)
 
 
 def test_slice_slice():
