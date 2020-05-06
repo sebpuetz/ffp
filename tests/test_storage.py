@@ -2,6 +2,7 @@ import contextlib
 import os
 
 import ffp
+import ffp.io
 import numpy as np
 import pytest
 import tempfile
@@ -10,7 +11,7 @@ import tempfile
 def test_read_array(tests_root, vocab_array_tuple):
     with pytest.raises(TypeError):
         ffp.storage.load_storage(None)
-    with pytest.raises(IOError):
+    with pytest.raises(ffp.io.FinalfusionFormatError):
         ffp.storage.load_storage(1)
     with pytest.raises(IOError):
         ffp.storage.load_storage("foo")
@@ -25,7 +26,7 @@ def test_read_array(tests_root, vocab_array_tuple):
 def test_mmap_array(tests_root, vocab_array_tuple):
     with pytest.raises(TypeError):
         ffp.storage.load_storage(None, mmap=True)
-    with pytest.raises(IOError):
+    with pytest.raises(ffp.io.FinalfusionFormatError):
         ffp.storage.load_storage(1, mmap=True)
     with pytest.raises(IOError):
         ffp.storage.load_storage("foo", mmap=True)

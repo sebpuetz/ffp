@@ -11,7 +11,7 @@ from typing import IO, Tuple, Optional
 
 import numpy as np
 
-import ffp.io
+from ffp.io import _pad_float32, ChunkIdentifier, TypeId, FinalfusionFormatError
 from ffp.storage.storage import Storage
 
 
@@ -53,8 +53,8 @@ class QuantizedArray(Storage):
         return self._quantized_embeddings.shape[1]
 
     @staticmethod
-    def chunk_identifier() -> ffp.io.ChunkIdentifier:
-        return ffp.io.ChunkIdentifier.QuantizedArray
+    def chunk_identifier() -> ChunkIdentifier:
+        return ChunkIdentifier.QuantizedArray
 
     @staticmethod
     def _read_quantized_header(file: IO[bytes]):
@@ -65,13 +65,17 @@ class QuantizedArray(Storage):
         n_centroids = struct.unpack("<I", file.read(4))[0]
         n_embeddings = struct.unpack("<Q", file.read(8))[0]
         assert reconstructed_len % quantized_len == 0
-        type_id = ffp.io.TypeId(
+        type_id = TypeId(
             struct.unpack("<I", file.read(struct.calcsize("<I")))[0])
-        ffp.io.TypeId.u8.match(type_id)
-        type_id = ffp.io.TypeId(
+        if TypeId.u8 != type_id:
+            raise FinalfusionFormatError(
+                f"Invalid Type, expected {str(TypeId.u8)}, got {type_id}")
+        type_id = TypeId(
             struct.unpack("<I", file.read(struct.calcsize("<I")))[0])
-        ffp.io.TypeId.f32.match(type_id)
-        file.seek(ffp.io.pad_float(file.tell()), 1)
+        if TypeId.f32 != type_id:
+            raise FinalfusionFormatError(
+                f"Invalid Type, expected {str(TypeId.f32)}, got {type_id}")
+        file.seek(_pad_float32(file.tell()), 1)
         if projection:
             projection = np.fromfile(file,
                                      count=reconstructed_len *
@@ -122,7 +126,7 @@ class QuantizedArray(Storage):
 
     def write_chunk(self, file: IO[bytes]):
         file.write(struct.pack("<I", int(self.chunk_identifier())))
-        padding = ffp.io.pad_float(file.tell())
+        padding = _pad_float32(file.tell())
         chunk_len = struct.calcsize("<IIIIIQII") + padding
         proj = self._quantizer.projection is not None
         if proj:
@@ -138,8 +142,7 @@ class QuantizedArray(Storage):
             struct.pack("<IIIII", proj, norms, self.quantized_len,
                         self.shape[1], self._quantizer.n_centroids))
         file.write(struct.pack("<Q", self.shape[0]))
-        file.write(
-            struct.pack("<II", int(ffp.io.TypeId.u8), int(ffp.io.TypeId.f32)))
+        file.write(struct.pack("<II", int(TypeId.u8), int(TypeId.f32)))
         file.write(struct.pack("x" * padding))
         if proj:
             file.write(self._quantizer.projection.tobytes())

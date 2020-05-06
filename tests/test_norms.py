@@ -2,6 +2,7 @@ import contextlib
 import os
 
 import ffp
+import ffp.io
 import numpy as np
 import pytest
 import tempfile
@@ -10,7 +11,7 @@ import tempfile
 def test_read_array(tests_root):
     with pytest.raises(TypeError):
         ffp.norms.load_norms(None)
-    with pytest.raises(IOError):
+    with pytest.raises(ffp.io.FinalfusionFormatError):
         ffp.norms.load_norms(1)
     with pytest.raises(IOError):
         ffp.norms.load_norms("foo")

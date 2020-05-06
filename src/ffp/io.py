@@ -1,111 +1,120 @@
 """
-Define some common IO operations and types.
+This module defines some common IO operations and types.
 
-`Chunk`s are the basic blocks of finalfusion embeddings, each component is serialized
-as a `Chunk` in finalfusion files, starting with a `ChunkIdentifier` followed by the
-chunk size in bytes. This design allows straight-forward reading of the file and
-skipping unwanted parts.
+:class:`Chunk` is the building block of finalfusion embeddings, each component
+is serialized as its own, non-overlapping, chunk in finalfusion files.
+
+:class:`ChunkIdentifier` is a unique integer identifiers for :class:`Chunk`.
+
+:class:`TypeId` is used to uniquely identify numerical types.
+
+The :class:`Header` handles the preamble of finalfusion files.
+
+:class:`FinalfusionFormatError` is raised upon reading from malformed finalfusion
+files.
 """
 import struct
 from abc import ABC, abstractmethod
 from enum import unique, IntEnum
-from typing import IO, Optional, Tuple, Iterable
+from typing import IO, Optional, Tuple, List
 
-MAGIC = b'FiFu'
+_MAGIC = b'FiFu'
 VERSION = 0
-
-
-@unique
-class ChunkIdentifier(IntEnum):
-    """
-    Enum identifying the different `Chunk` types.
-    """
-    Header = 0
-    SimpleVocab = 1
-    NdArray = 2
-    BucketSubwordVocab = 3
-    QuantizedArray = 4
-    Metadata = 5
-    NdNorms = 6
-    FastTextSubwordVocab = 7
-    ExplicitSubwordVocab = 8
-
-    def is_vocab(self):
-        """
-        Return whether the ChunkIdentifier refers to a vocabulary type.
-        @return: bool indicating whether the identifier refers to a vocab.
-        """
-        return self in [
-            ChunkIdentifier.SimpleVocab, ChunkIdentifier.BucketSubwordVocab,
-            ChunkIdentifier.FastTextSubwordVocab,
-            ChunkIdentifier.ExplicitSubwordVocab
-        ]
-
-    def is_storage(self):
-        """
-        Return whether the ChunkIdentifier refers to a storage type.
-        @return: bool indicating whether the identifier refers to a storage.
-        """
-        return self in [
-            ChunkIdentifier.QuantizedArray, ChunkIdentifier.NdArray
-        ]
-
-
-@unique
-class TypeId(IntEnum):
-    """
-    Enum identifying the different data types in finalfusion arrays.
-    """
-    u8 = 1
-    f32 = 10
-
-    def match(self, other: 'TypeId'):
-        """
-        Ensures that the TypeIds match. Raises an AssertionError.
-        :param other: TypeId to match.
-        :raise: AssertionError if the TypeIds don't match.
-        """
-        assert self == other, "Expected " + str(self) + ", found: " + str(
-            other)
 
 
 class Chunk(ABC):
     """
-    Common methods that all finalfusion `Chunk`s need to implement.
+    Basic building blocks of finalfusion files.
     """
-    def write(self, filename):
+    def write(self, path: str):
         """
-        Write the chunk to the given filename in finalfusion format
-        :param filename: filename
+        Write the Chunk as a standalone finalfusion file.
+
+        Parameters
+        ----------
+        path : str
+            Output path
+
+        Raises
+        ------
+        TypeError
+            If the Chunk is a :class:`Header`.
         """
-        with open(filename, "wb") as file:
+        with open(path, "wb") as file:
             chunk_id = self.chunk_identifier()
             if chunk_id == ChunkIdentifier.Header:
-                raise ValueError("Cannot write header to file by itself")
+                raise TypeError("Cannot write header to file by itself")
             Header([chunk_id]).write_chunk(file)
             self.write_chunk(file)
 
     @staticmethod
     @abstractmethod
-    def chunk_identifier() -> ChunkIdentifier:
+    def chunk_identifier() -> 'ChunkIdentifier':
         """
-        Get this `Chunk`'s identifier
-        :return: ChunkIdentifier
+        Get the ChunkIdentifier for this Chunk.
+
+        Returns
+        --------
+        chunk_identifier : ChunkIdentifier
         """
     @staticmethod
     @abstractmethod
     def read_chunk(file: IO[bytes]) -> 'Chunk':
         """
-        Read a chunk and return self.
-        :param file: File at the beginning of a chunk.
-        :return: self
+        Read the Chunk and return it.
+
+        The file must be positioned before the contents of the :class:`Chunk`
+        but after its header.
+
+        Parameters
+        -----------
+        file : IO[bytes]
+            a finalfusion file containing the given Chunk
+
+        Returns
+        --------
+        chunk: Chunk
+            The chunk read from the file.
         """
     @abstractmethod
     def write_chunk(self, file: IO[bytes]):
         """
-        Append the chunk to a file.
-        :param file: the file to append the chunk to.
+        Write the Chunk to a file.
+
+        Parameters
+        ----------
+        file : IO[bytes]
+            Output file for the Chunk
         """
+    @staticmethod
+    def read_chunk_header(file: IO[bytes]
+                          ) -> Optional[Tuple['ChunkIdentifier', int]]:
+        """
+        Reads the chunk header.
+
+        After successfully reading the header, a tuple containing
+        :class:`.ChunkIdentifier` and and integer specifying the chunk size in
+        bytes are returned.
+
+        Parameters
+        ----------
+        file : IO[bytes]
+            a finalfusion file positioned before a chunk header.
+
+        Returns
+        -------
+        chunk_header : Optional[(ChunkIdentifier, int)]
+            None is returned iff the reader is at EOF.
+
+        Raises
+        ------
+        FinalfusionFormatError
+            If only part of the header could be read.
+        """
+        val = _read_binary(file, "<IQ")
+        if val is None:
+            return None
+        return ChunkIdentifier(val[0]), val[1]
 
 
 class Header(Chunk):
@@ -118,80 +127,192 @@ class Header(Chunk):
         self.chunk_ids_ = chunk_ids
 
     @property
-    def chunk_ids(self) -> list:
+    def chunk_ids(self) -> List['ChunkIdentifier']:
         """
         Get the chunk IDs from the header
-        :return: Chunk identifiers
+
+        Returns
+        -------
+        chunk_ids : List[ChunkIdentifier]
+            List of ChunkIdentifiers in the Header.
         """
         return self.chunk_ids_
 
     @staticmethod
-    def chunk_identifier():
+    def chunk_identifier() -> 'ChunkIdentifier':
         return ChunkIdentifier.Header
 
     @staticmethod
-    def read_chunk(file):
+    def read_chunk(file) -> 'Header':
         magic = file.read(4)
-        if magic != MAGIC:
-            raise IOError("Magic should be b'FiFu', not: " +
-                          magic.decode('utf-8'))
-        version = struct.unpack("<I", file.read(4))[0]
+        if magic != _MAGIC:
+            invalid_magic = magic.decode('ascii', errors='ignore')
+            raise FinalfusionFormatError(
+                f'Magic should be b\'FiFu\', not: {invalid_magic}')
+        version = _read_binary(file, "<I")[0]
         if version != VERSION:
-            raise IOError("Unknown model version: " + version)
-        n_chunks = struct.unpack("<I", file.read(4))[0]
-        chunk_ids = list(
-            struct.unpack("<" + "I" * n_chunks, file.read(4 * n_chunks)))
+            raise FinalfusionFormatError(f'Unknown model version: {version}')
+        n_chunks = _read_binary(file, "<I")[0]
+        chunk_ids = list(_read_binary(file, f'<{n_chunks}I'))
         return Header(chunk_ids)
 
     def write_chunk(self, file):
-        file.write(MAGIC)
+        file.write(_MAGIC)
         n_chunks = len(self.chunk_ids)
-        file.write(
-            struct.pack("<II" + "I" * n_chunks, VERSION, n_chunks,
-                        *self.chunk_ids))
-
-
-def read_chunk_header(file) -> Optional[Tuple[ChunkIdentifier, int]]:
-    """
-    Reads the chunk header, after successfully reading the header, `ChunkIdentifier` and
-    the chunk size in bytes are returned.
-
-    :param file: file in finalfusion format at the beginning of a chunk.
-    :return: (ChunkIdentifier, chunk_size)
-    """
-    buffer = file.read(12)
-    if len(buffer) < 12:
-        return None
-    chunk_id, chunk_size = struct.unpack("<IQ", buffer)
-    return ChunkIdentifier(chunk_id), chunk_size
+        _write_binary(file, f'<II{n_chunks}I', VERSION, n_chunks,
+                      *self.chunk_ids)
 
 
 def find_chunk(file: IO[bytes],
-               chunks: Iterable[ChunkIdentifier]) -> Optional[ChunkIdentifier]:
+               chunks: List['ChunkIdentifier']) -> Optional['ChunkIdentifier']:
     """
-    Find one of the specified chunks in the given finalfusion file.
+    Find a :class:`Chunk` in a file.
 
-    Seeks the file to the beginning of the first chunk in `chunks` found.
-    :param file: finalfusion file
-    :param chunks: iterable of chunk identifiers
-    :return: the first found chunk identifier
+    Looks for one of the specified `chunks` in the input file and seeks the
+    file to the beginning of the first chunk found from `chunks`. I.e. the file
+    is positioned before the content but after the header of a chunk.
+
+    The :func:`Chunk.read_chunk` method can be invoked on the Chunk
+    corresponding to the returned :class:`ChunkIdentifier`.
+
+    This method seeks the input file to the beginning before searching.
+
+    Parameters
+    ----------
+    file : IO[bytes]
+        finalfusion file
+
+    chunks : List[ChunkIdentifier]
+        List of Chunks to look for in the input file.
+
+    Returns
+    -------
+    chunk_id : Optional[ChunkIdentifier]
+        The first ChunkIdentifier found in the file. None if none of the chunks
+        could be found.
     """
     file.seek(0)
     Header.read_chunk(file)
     while True:
-        chunk = read_chunk_header(file)
-        if chunk is None:
+        chunk_header = Chunk.read_chunk_header(file)
+        if chunk_header is None:
             return None
-        if chunk[0] in chunks:
-            return chunk[0]
-        file.seek(chunk[1], 1)
+        chunk_id, chunk_size = chunk_header
+        if chunk_id in chunks:
+            return chunk_id
+        file.seek(chunk_size, 1)
 
 
-def pad_float(pos):
+@unique
+class ChunkIdentifier(IntEnum):
     """
-    Return the required padding to the next page boundary from a given position.
-    :param pos:
-    :return:
+    Known finalfusion Chunk types.
+    """
+    Header = 0
+    SimpleVocab = 1
+    NdArray = 2
+    BucketSubwordVocab = 3
+    QuantizedArray = 4
+    Metadata = 5
+    NdNorms = 6
+    FastTextSubwordVocab = 7
+    ExplicitSubwordVocab = 8
+
+    def is_storage(self):
+        """
+        Return if this Identifier belongs to a storage.
+
+        Returns
+        -------
+        is_storage : bool
+        """
+        return self in [
+            ChunkIdentifier.NdArray, ChunkIdentifier.QuantizedArray
+        ]
+
+    def is_vocab(self):
+        """
+        Return if this Identifier belongs to a vocab.
+
+        Returns
+        -------
+        is_vocab : bool
+        """
+        return self in [
+            ChunkIdentifier.SimpleVocab, ChunkIdentifier.BucketSubwordVocab,
+            ChunkIdentifier.FastTextSubwordVocab,
+            ChunkIdentifier.ExplicitSubwordVocab
+        ]
+
+
+@unique
+class TypeId(IntEnum):
+    """
+    Known finalfusion data types.
+    """
+    u8 = 1
+    f32 = 10
+
+
+class FinalfusionFormatError(Exception):
+    """
+    Exception to specify that the format of a finalfusion file was incorrect.
+    """
+
+
+def _pad_float32(pos):
+    """
+    Helper method to pad to the next page boundary from a given position.
+
+    Parameters
+    ----------
+    pos : int
+        Current offset
+
+    Returns
+    -------
+    padding : int
+        Required padding in bytes.
     """
     float_size = struct.calcsize('<f')
     return float_size - (pos % float_size)
+
+
+def _write_binary(file: IO[bytes], struct_fmt: str, *args):
+    """
+    Helper method to write binary data according to the format string.
+    """
+    data = struct.pack(struct_fmt, *args)
+    file.write(data)
+
+
+def _read_binary(file: IO[bytes], struct_fmt: str) -> Optional[Tuple[int]]:
+    """
+    Helper method to read binary data from a file according to the format
+    string.
+
+    Parameters
+    ----------
+    file : IO[bytes]
+        Output file
+    struct_fmt : str
+        struct format string
+
+    Returns
+    -------
+    data : Optional[tuple]
+        Returns the unpacked data as a tuple. If **no** data could be read,
+        None is returned
+
+    Raises
+    ------
+    FinalfusionFormatError
+        If data could only be read partially.
+    """
+    size = struct.calcsize(struct_fmt)
+    buf = file.read(size)
+    if len(buf) == 0:
+        return None
+    if len(buf) != size:
+        raise FinalfusionFormatError(f'Could not read {size} bytes from file')
+    return struct.unpack(struct_fmt, buf)

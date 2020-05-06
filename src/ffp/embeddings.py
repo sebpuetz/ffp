@@ -7,7 +7,7 @@ from typing import Optional, Union, Tuple
 
 import numpy as np
 
-import ffp.io
+from ffp.io import Chunk, ChunkIdentifier, Header
 import ffp.metadata
 import ffp.norms
 import ffp.storage
@@ -68,7 +68,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
     def chunks(self):
         """
         Get the present chunks as a list.
-        :return: ffp.io.Chunks
+        :return: Chunks
         """
         chunks = []
         if self._vocab is not None:
@@ -181,8 +181,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         """
         with open(path, 'wb') as file:
             chunks = self.chunks()
-            header = ffp.io.Header(
-                [chunk.chunk_identifier() for chunk in chunks])
+            header = Header([chunk.chunk_identifier() for chunk in chunks])
             header.write_chunk(file)
             for chunk in chunks:
                 chunk.write_chunk(file)
@@ -254,7 +253,9 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
 
         :return: Embeddings with an explicit ngram lookup.
         """
-        if not isinstance(self._vocab, ffp.vocab.BucketVocab):
+        bucket_vocabs = (ffp.vocab.FastTextVocab,
+                         ffp.vocab.FinalfusionBucketVocab)
+        if not isinstance(self._vocab, bucket_vocabs):
             raise TypeError(
                 "Only bucketed embeddings can be converted to explicit.")
         vocab = self._vocab.to_explicit()
@@ -263,9 +264,9 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         storage = np.zeros((vocab.idx_bound, self._storage.shape[1]),
                            dtype=np.float32)
         storage[:len(vocab)] = self._storage[:len(vocab)]
-        for ngram in vocab.indexer:
-            storage[len(vocab) + vocab.indexer(ngram)] = self._storage[
-                len(vocab) + self._vocab.indexer(ngram)]
+        for ngram in vocab.subword_indexer:
+            storage[len(vocab) + vocab.subword_indexer(ngram)] = self._storage[
+                len(vocab) + self._vocab.subword_indexer(ngram)]
         return Embeddings(vocab=vocab, storage=ffp.storage.NdArray(storage))
 
     def __getitem__(self, item):
@@ -300,22 +301,22 @@ def load_finalfusion(path: str, mmap: bool = False) -> Embeddings:
     :return: Embeddings
     """
     with open(path, 'rb') as file:
-        _ = ffp.io.Header.read_chunk(file)
-        chunk_id, _ = ffp.io.read_chunk_header(file)
+        _ = Header.read_chunk(file)
+        chunk_id, _ = Chunk.read_chunk_header(file)
         embeddings = Embeddings()
         while True:
             if chunk_id.is_storage():
                 embeddings.storage = _STORAGE_READERS[chunk_id](file, mmap)
             elif chunk_id.is_vocab():
                 embeddings.vocab = _VOCAB_READERS[chunk_id](file)
-            elif chunk_id == ffp.io.ChunkIdentifier.NdNorms:
+            elif chunk_id == ChunkIdentifier.NdNorms:
                 embeddings.norms = ffp.norms.Norms.read_chunk(file)
-            elif chunk_id == ffp.io.ChunkIdentifier.Metadata:
+            elif chunk_id == ChunkIdentifier.Metadata:
                 embeddings.metadata = ffp.metadata.Metadata.read_chunk(file)
             else:
-                chunk_id, _ = ffp.io.read_chunk_header(file)
+                chunk_id, _ = Chunk.read_chunk_header(file)
                 raise TypeError("Unknown chunk type: " + str(chunk_id))
-            chunk_header = ffp.io.read_chunk_header(file)
+            chunk_header = Chunk.read_chunk_header(file)
             if chunk_header is None:
                 break
             chunk_id, _ = chunk_header
@@ -502,17 +503,14 @@ def _read_ft_vocab(file, buckets, min_n, max_n):
 
 
 _VOCAB_READERS = {
-    ffp.io.ChunkIdentifier.SimpleVocab:
-    ffp.vocab.SimpleVocab.read_chunk,
-    ffp.io.ChunkIdentifier.BucketSubwordVocab:
+    ChunkIdentifier.SimpleVocab: ffp.vocab.SimpleVocab.read_chunk,
+    ChunkIdentifier.BucketSubwordVocab:
     ffp.vocab.FinalfusionBucketVocab.read_chunk,
-    ffp.io.ChunkIdentifier.FastTextSubwordVocab:
-    ffp.vocab.FastTextVocab.read_chunk,
-    ffp.io.ChunkIdentifier.ExplicitSubwordVocab:
-    ffp.vocab.ExplicitVocab.read_chunk,
+    ChunkIdentifier.FastTextSubwordVocab: ffp.vocab.FastTextVocab.read_chunk,
+    ChunkIdentifier.ExplicitSubwordVocab: ffp.vocab.ExplicitVocab.read_chunk,
 }
 
 _STORAGE_READERS = {
-    ffp.io.ChunkIdentifier.NdArray: ffp.storage.NdArray.load,
-    ffp.io.ChunkIdentifier.QuantizedArray: ffp.storage.QuantizedArray.load,
+    ChunkIdentifier.NdArray: ffp.storage.NdArray.load,
+    ChunkIdentifier.QuantizedArray: ffp.storage.QuantizedArray.load,
 }

@@ -4,6 +4,7 @@ import tempfile
 import numpy as np
 import pytest
 import ffp
+import ffp.io
 
 TEST_NORMS = [
     6.557438373565674, 8.83176040649414, 6.164413928985596, 9.165151596069336,
@@ -21,7 +22,7 @@ def test_read_embeddings(tests_root):
     assert np.allclose(e.storage, e2.storage)
     with pytest.raises(TypeError):
         ffp.load_finalfusion(None)
-    with pytest.raises(IOError):
+    with pytest.raises(ffp.io.FinalfusionFormatError):
         ffp.load_finalfusion(1)
     with pytest.raises(IOError):
         ffp.load_finalfusion("foo")
@@ -273,8 +274,8 @@ def test_buckets_to_explicit(bucket_vocab_embeddings_fifu):
         bucket_vocab_embeddings_fifu.vocab)
     assert explicit.vocab.idx_bound == len(
         bucket_vocab_embeddings_fifu.vocab) + 16
-    bucket_indexer = bucket_vocab_embeddings_fifu.vocab.indexer
-    explicit_indexer = explicit.vocab.indexer
+    bucket_indexer = bucket_vocab_embeddings_fifu.vocab.subword_indexer
+    explicit_indexer = explicit.vocab.subword_indexer
     for ngram in explicit_indexer:
         assert np.allclose(
             bucket_vocab_embeddings_fifu.storage[2 + bucket_indexer(ngram)],

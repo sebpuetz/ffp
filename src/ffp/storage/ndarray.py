@@ -7,7 +7,8 @@ from typing import IO, Tuple
 
 import numpy as np
 
-import ffp.io
+from ffp.io import ChunkIdentifier, TypeId, FinalfusionFormatError, _pad_float32, _read_binary,\
+    _write_binary
 from ffp.storage.storage import Storage
 
 
@@ -18,14 +19,26 @@ class NdArray(np.ndarray, Storage):
     Wraps an numpy matrix, either in-memory or memory-mapped.
     """
     def __new__(cls, array: np.ndarray):
+        """
+        Construct a new NdArray storage.
+
+        Parameters
+        ----------
+        array : np.ndarray
+            The storage buffer.
+
+        Raises
+        ------
+        TypeError
+            If the array is not a 2-dimensional float32 array.
+        """
         if array.dtype != np.float32 or array.ndim != 2:
             raise TypeError("expected 2-d float32 array")
-        obj = array.view(cls)
-        return obj
+        return array.view(cls)
 
     @staticmethod
     def chunk_identifier():
-        return ffp.io.ChunkIdentifier.NdArray
+        return ChunkIdentifier.NdArray
 
     @staticmethod
     def read_chunk(file) -> 'NdArray':
@@ -53,30 +66,44 @@ class NdArray(np.ndarray, Storage):
     @staticmethod
     def _read_array_header(file: IO[bytes]) -> Tuple[int, int]:
         """
-        Read the header of an array chunk. This contains the matrix dimensions and the datatype.
+        Helper method to read the header of an NdArray chunk.
 
-        In addition, this method seeks the file to the beginning of the actual data.
-        :param file:
-        :return: tuple containing rows, cols
+        The method reads the shape tuple, verifies the TypeId and seeks the file to the start
+        of the array. The shape tuple is returned.
+
+        Parameters
+        ----------
+        file : IO[bytes]
+            finalfusion file with a storage at the start of a NdArray chunk.
+
+        Returns
+        -------
+        shape : Tuple[int, int]
+            Shape of the storage.
+
+        Raises
+        ------
+        FinalfusionFormatError
+            If the TypeId does not match TypeId.f32
         """
-        rows, cols = struct.unpack("<QI", file.read(struct.calcsize("<QI")))
-        type_id = ffp.io.TypeId(
-            struct.unpack("<I", file.read(struct.calcsize("<I")))[0])
-        ffp.io.TypeId.f32.match(type_id)
-        file.seek(ffp.io.pad_float(file.tell()), 1)
+        rows, cols = _read_binary(file, "<QI")
+        type_id = TypeId(_read_binary(file, "<I")[0])
+        if TypeId.f32 != type_id:
+            raise FinalfusionFormatError(
+                f"Invalid Type, expected {TypeId.f32}, got {type_id}")
+        file.seek(_pad_float32(file.tell()), 1)
         return rows, cols
 
     def write_chunk(self, file: IO[bytes]):
-        file.write(struct.pack("<I", int(self.chunk_identifier())))
-        padding = ffp.io.pad_float(file.tell())
-        chunk_len = struct.calcsize(
-            "<QII") + padding + self.size * struct.calcsize('<f')
+        _write_binary(file, "<I", int(self.chunk_identifier()))
+        padding = _pad_float32(file.tell())
+        chunk_len = struct.calcsize("<QII") + padding + struct.calcsize(
+            f'<{self.size}f')
         # pylint: disable=unpacking-non-sequence
         rows, cols = self.shape
-        file.write(struct.pack("<QQI", chunk_len, rows, cols))
-        file.write(struct.pack("<I", int(ffp.io.TypeId.f32)))
-        file.write(struct.pack("x" * padding))
-        file.write(self.tobytes())
+        _write_binary(file, "<QQII", chunk_len, rows, cols, int(TypeId.f32))
+        _write_binary(file, f"{padding}x")
+        self.tofile(file)
 
     def __getitem__(self, key):
         if isinstance(key, slice):

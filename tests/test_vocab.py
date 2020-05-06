@@ -2,13 +2,14 @@ import os
 
 import pytest
 import ffp
+import ffp.io
 import tempfile
 
 
 def test_reading(tests_root):
     with pytest.raises(TypeError):
         ffp.vocab.load_vocab(None)
-    with pytest.raises(IOError):
+    with pytest.raises(ffp.io.FinalfusionFormatError):
         ffp.vocab.load_vocab(1)
     with pytest.raises(IOError):
         ffp.vocab.load_vocab("foo")
@@ -122,10 +123,11 @@ def test_bucket_to_explicit():
     explicit = v.to_explicit()
     assert v.words == explicit.words
     assert explicit.idx_bound == len(v) + 43
-    assert explicit.indexer.idx_bound == 43
-    assert explicit.indexer("dings") == explicit.indexer("<gro")
-    assert v.indexer("dings") == v.indexer("<gro")
-    assert len(explicit.indexer) == 44
+    assert explicit.subword_indexer.idx_bound == 43
+    assert explicit.subword_indexer("dings") == explicit.subword_indexer(
+        "<gro")
+    assert v.subword_indexer("dings") == v.subword_indexer("<gro")
+    assert len(explicit.subword_indexer) == 44
 
 
 def test_ngrams():
@@ -152,7 +154,7 @@ def test_ngrams():
 
 
 def test_subword_indices(tests_root):
-    v = ffp.vocab.load_subword_vocab(
+    v = ffp.vocab.load_finalfusion_bucket_vocab(
         os.path.join(tests_root, "data", "ff_buckets.fifu"))
     tuebingen_buckets = [
         14, 69, 74, 124, 168, 181, 197, 246, 250, 276, 300, 308, 325, 416, 549,

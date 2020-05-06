@@ -4,12 +4,13 @@ import tempfile
 import pytest
 
 import ffp
+import ffp.io
 
 
 def test_read_metadata(tests_root):
     with pytest.raises(TypeError):
         ffp.metadata.load_metadata(None)
-    with pytest.raises(IOError):
+    with pytest.raises(ffp.io.FinalfusionFormatError):
         ffp.metadata.load_metadata(1)
     with pytest.raises(IOError):
         ffp.metadata.load_metadata("foo")
