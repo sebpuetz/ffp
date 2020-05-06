@@ -5,7 +5,7 @@ Finalfusion Subword Vocabularies
 import collections
 import struct
 from abc import abstractmethod
-from typing import List, Optional, Tuple, Any, Union, IO
+from typing import List, Optional, Tuple, Any, Union, IO, Dict
 
 from ffp.io import ChunkIdentifier, find_chunk, _write_binary, _read_binary
 from ffp.subwords import ExplicitIndexer, FastTextIndexer, FinalfusionHashIndexer, word_ngrams
@@ -16,7 +16,7 @@ from ffp.vocab.cutoff import Cutoff, _count_words, _filter_and_sort
 
 class SubwordVocab(Vocab):
     """
-    Vocabulary type that offers subword lookups.
+    Vocabulary that offers subword lookups.
     """
     def idx(self, item, default=None):
         idx = self.word_index.get(item)
@@ -73,7 +73,7 @@ class SubwordVocab(Vocab):
         subword_indexer : Union[ExplicitIndexer, FinalfusionHashIndexer, FastTextIndexer]
             The subword indexer of the vocabulary.
         """
-    def subwords(self, item: str, bracket=True) -> List[str]:
+    def subwords(self, item: str, bracket: bool = True) -> List[str]:
         """
         Get the n-grams of the given item as a list.
 
@@ -93,7 +93,7 @@ class SubwordVocab(Vocab):
         """
         return word_ngrams(item, self.min_n, self.max_n, bracket)
 
-    def subword_indices(self, item: str, bracket=True) -> List[int]:
+    def subword_indices(self, item: str, bracket: bool = True) -> List[int]:
         """
         Get the subword indices for the given item.
 
@@ -138,9 +138,41 @@ class FinalfusionBucketVocab(SubwordVocab):
     """
     Finalfusion Bucket Vocabulary.
     """
-    def __init__(self, words, indexer=None, index=None):
-        if indexer is None:
-            indexer = FinalfusionHashIndexer(21)
+    def __init__(self,
+                 words: List[str],
+                 indexer: FinalfusionHashIndexer = FinalfusionHashIndexer(21),
+                 index: Optional[Dict[str, int]] = None):
+        """
+        Initialize a FinalfusionBucketVocab.
+
+        Initializes the vocabulary with the given words and optional index and
+        indexer.
+
+        If no indexer is passed, a FinalfusionHashIndexer with bucket exponent
+        21 is used.
+
+        If no index is given, the nth word in the `words` list is assigned
+        index `n`. The word list cannot contain duplicate entries and it needs
+        to be of same length as the index.
+
+        Parameters
+        ----------
+        words : List[str]
+            List of unique words
+        indexer : FinalfusionHashIndexer
+            Subword indexer to use for the vocabulary. Defaults to an indexer
+            with 2^21 buckets with range 3-6.
+        index : Optional[Dict[str, int]]
+            Dictionary providing an entry -> index mapping.
+
+        Raises
+        ------
+        ValueError
+            if the length of `index` and `word` doesn't match.
+        AssertionError
+            If the indexer is not a FinalfusionHashIndexer.
+        """
+        assert isinstance(indexer, FinalfusionHashIndexer)
         super().__init__()
         self._index = _validate_words_and_create_index(words, index)
         self._words = words
@@ -150,18 +182,34 @@ class FinalfusionBucketVocab(SubwordVocab):
     def from_corpus(
             filename,
             cutoff=Cutoff(30, mode='min_freq'),
-            indexer: Optional[FinalfusionHashIndexer] = None,
+            indexer: FinalfusionHashIndexer = FinalfusionHashIndexer(21),
     ) -> Tuple['FinalfusionBucketVocab', List[int]]:
         """
-        Construct a Finalfusion Bucket Vocabulary from the given corpus.
-        :param filename: file containing white-space seperated tokens.
-        :param cutoff: set the number of tokens in the vocabulary, either as a frequency
-        cutoff or as a target size
-        :param indexer: Indexer to be used
-        :param ngram_range: bounds of extracted n-gram range
-        :return: Tuple containing FinalfusionBucketVocab and in-vocab token counts
+        Build a Finalfusion Bucket Vocabulary from a corpus.
+
+        Parameters
+        ----------
+        filename : str
+            File with white-space separated tokens.
+        cutoff : Cutoff
+            Frequency cutoff or target size to restrict vocabulary size. Defaults to
+            minimum frequency cutoff of 30.
+        indexer : FinalfusionHashIndexer
+            Subword indexer to use for the vocabulary. Defaults to an indexer
+            with 2^21 buckets with range 3-6.
+
+        Returns
+        -------
+        (vocab, counts) : Tuple[FinalfusionBucketVocab, List[int]]
+            Tuple containing the Vocabulary as first item and counts of in-vocabulary items
+            as the second item.
+
+        Raises
+        ------
+        AssertionError
+            If the indexer is not a FinalfusionHashIndexer.
         """
-        assert isinstance(indexer, FinalfusionHashIndexer) or indexer is None
+        assert isinstance(indexer, FinalfusionHashIndexer)
         cnt = _count_words(filename)
         words, counts = _filter_and_sort(cnt, cutoff)
         return FinalfusionBucketVocab(words, indexer), counts
@@ -217,9 +265,41 @@ class FastTextVocab(SubwordVocab):
     """
     FastText vocabulary
     """
-    def __init__(self, words, indexer=None, index=None):
-        if indexer is None:
-            indexer = FastTextIndexer(2000000)
+    def __init__(self,
+                 words: List[str],
+                 indexer: FastTextIndexer = FastTextIndexer(2000000),
+                 index: Optional[Dict[str, int]] = None):
+        """
+        Initialize a FastTextVocab.
+
+        Initializes the vocabulary with the given words and optional index and
+        indexer.
+
+        If no indexer is passed, a FastTextIndexer with 2,000,000 buckets is
+        used.
+
+        If no index is given, the nth word in the `words` list is assigned
+        index `n`. The word list cannot contain duplicate entries and it needs
+        to be of same length as the index.
+
+        Parameters
+        ----------
+        words : List[str]
+            List of unique words
+        indexer : FastTextIndexer
+            Subword indexer to use for the vocabulary. Defaults to an indexer
+            with 2,000,000 buckets with range 3-6.
+        index : Optional[Dict[str, int]]
+            Dictionary providing an entry -> index mapping.
+
+        Raises
+        ------
+        ValueError
+            if the length of `index` and `word` doesn't match.
+        AssertionError
+            If the indexer is not a FastTextIndexer.
+        """
+        assert isinstance(indexer, FastTextIndexer)
         super().__init__()
         self._index = _validate_words_and_create_index(words, index)
         self._words = words
@@ -229,18 +309,34 @@ class FastTextVocab(SubwordVocab):
     def from_corpus(
             filename,
             cutoff: Cutoff = Cutoff(30, mode='min_freq'),
-            indexer: Optional[FastTextIndexer] = None,
+            indexer: FastTextIndexer = FastTextIndexer(2000000),
     ) -> Tuple['FastTextVocab', List[int]]:
         """
-        Construct a fastText vocabulary from the given corpus.
-        :param filename: file containing white-space seperated tokens.
-        :param cutoff: set the number of tokens in the vocabulary, either as a frequency
-        cutoff or as a target size
-        :param indexer: Indexer to be used
-        :param ngram_range: bounds of extracted n-gram range
-        :return: Tuple containing FastTextVocab and in-vocab token counts
+        Build a fastText vocabulary from a corpus.
+
+        Parameters
+        ----------
+        filename : str
+            File with white-space separated tokens.
+        cutoff : Cutoff
+            Frequency cutoff or target size to restrict vocabulary size. Defaults to
+            minimum frequency cutoff of 30.
+        indexer : FastTextIndexer
+            Subword indexer to use for the vocabulary. Defaults to an indexer
+            with 2,000,000 buckets with range 3-6.
+
+        Returns
+        -------
+        (vocab, counts) : Tuple[FastTextVocab, List[int]]
+            Tuple containing the Vocabulary as first item and counts of in-vocabulary items
+            as the second item.
+
+        Raises
+        ------
+        AssertionError
+            If the indexer is not a FastTextIndexer.
         """
-        assert isinstance(indexer, FastTextIndexer) or indexer is None
+        assert isinstance(indexer, FastTextIndexer)
         cnt = _count_words(filename)
         words, counts = _filter_and_sort(cnt, cutoff)
         return FastTextVocab(words, indexer), counts
@@ -309,14 +405,26 @@ class ExplicitVocab(SubwordVocab):
                     token_cutoff: Cutoff = Cutoff(30, mode='min_freq'),
                     ngram_cutoff: Cutoff = Cutoff(30, mode='min_freq')):
         """
-        Construct a explicit vocabulary from the given corpus.
-        :param filename: file containing white-space seperated tokens.
-        :param ngram_range: bounds of extracted n-gram range
-        :param token_cutoff: set the number of tokens in the vocabulary, either as a frequency
-        cutoff or as a target size
-        :param ngram_cutoff: set the number of n-grams in the vocabulary, either as a frequency
-        cutoff or as a target size
-        :return: a tuple containing the vocabulary, token counts and n-gram counts
+        Build an ExplicitVocab from a corpus.
+
+        Parameters
+        ----------
+        filename : str
+            File with white-space separated tokens.
+        ngram_range : Tuple[int, int]
+            Specifies the n-gram range for the indexer.
+        token_cutoff : Cutoff
+            Frequency cutoff or target size to restrict token vocabulary size. Defaults to
+            minimum frequency cutoff of 30.
+        ngram_cutoff : Cutoff
+            Frequency cutoff or target size to restrict ngram vocabulary size. Defaults to
+            minimum frequency cutoff of 30.
+
+        Returns
+        -------
+        (vocab, counts) : Tuple[FastTextVocab, List[int], List[int]
+            Tuple containing the Vocabulary as first item, counts of in-vocabulary tokens
+            as the second item and in-vocabulary ngram counts as the last item.
         """
         min_n, max_n = ngram_range
         cnt = _count_words(filename)
@@ -329,7 +437,7 @@ class ExplicitVocab(SubwordVocab):
         indexer = ExplicitIndexer(ngrams, ngram_range=ngram_range)
         return ExplicitVocab(words, indexer), tok_cnt, ngram_cnt
 
-    @property  # pylint : disable=duplicate-code
+    @property
     def words(self) -> list:
         return self._words
 
@@ -337,7 +445,6 @@ class ExplicitVocab(SubwordVocab):
     def word_index(self) -> dict:
         return self._index
 
-    # pylint : enable=duplicate-code
     @property
     def subword_indexer(self) -> ExplicitIndexer:
         return self._indexer
