@@ -2,7 +2,6 @@
 Finalfusion Embeddings
 """
 import struct
-from enum import Enum, unique
 from typing import Optional, Union, Tuple
 
 import numpy as np
@@ -14,33 +13,42 @@ import ffp.storage
 import ffp.vocab
 
 
-@unique
-class Format(Enum):
-    """
-    Supported embedding formats.
-    """
-    finalfusion = "finalfusion"
-    finalfusion_mmap = "finalfusion_mmap"
-    text = "text"
-    textdims = "textdims"
-    word2vec = "word2vec"
-
-
 class Embeddings:  # pylint: disable=too-many-instance-attributes
     """
     Embeddings class.
 
     Typically consists of a storage and vocab. Other possible chunks are norms
     corresponding to the embeddings of the in-vocab tokens and metadata.
-
-    No chunk is required, but at least one chunk needs to be present to
-    construct embeddings.
     """
     def __init__(self,
                  storage: Optional[ffp.storage.Storage] = None,
                  vocab: Optional[ffp.vocab.Vocab] = None,
                  norms: Optional[ffp.norms.Norms] = None,
                  metadata: Optional[ffp.metadata.Metadata] = None):
+        """
+        Initialize Embeddings.
+
+        Initializes Embeddings with the given chunks.
+
+        Parameters
+        ----------
+        storage : Optional[Storage]
+            Embeddings Storage.
+        vocab : Optional[Vocab]
+            Embeddings Vocabulary.
+        norms : Optional[Norms]
+            Embeddings Norms.
+        metadata : Optional[Metadata]
+            Embeddings Metadata.
+
+        Raises
+        ------
+        AssertionError
+            * if any of the chunks is not the expected chunk
+            * vocab and storage are passed, but vocab.idx_bound doesn't match storage.shape[0]
+            * vocab and norms are passed, but len(vocab) and len(norms) don't match
+            * norms and storage are passed, but storage.shape[0] is smaller than len(norms)
+        """
         assert storage is None or isinstance(
             storage, ffp.storage.Storage), "storage is required to be Storage"
         assert vocab is None or isinstance(
@@ -67,8 +75,18 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
 
     def chunks(self):
         """
-        Get the present chunks as a list.
-        :return: Chunks
+        Get the Embeddings Chunks as a list.
+
+        The Chunks are ordered in the expected serialization order:
+        1. Metadata
+        2. Vocabulary
+        3. Storage
+        4. Norms
+
+        Returns
+        -------
+        chunks : List[Chunk]
+            List of embeddings chunks.
         """
         chunks = []
         if self._vocab is not None:
@@ -84,13 +102,35 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
     @property
     def storage(self) -> Optional[ffp.storage.Storage]:
         """
-        Get the storage. Returns None if no storage is set.
-        :return: Storage
+        Get the storage.
+
+        Returns None if no storage is set.
+
+        Returns
+        -------
+        storage : Optional[Storage]
+            The embeddings storage.
         """
         return self._storage
 
     @storage.setter
     def storage(self, storage: Optional[ffp.storage.Storage]):
+        """
+        Set the Storage.
+
+        Parameters
+        ----------
+        storage : Optional[Storage]
+            The new embeddings storage or None.
+
+        Raises
+        ------
+        AssertionError
+            * if a vocab is present and `storage.shape[0]` does not match `vocab.idx_bound`.
+            * if norms are present and `storage.shape[0]` is smaller than `len(norms)`.
+        TypeError
+            If storage is neither a Storage nor None.
+        """
         if storage is None:
             self._storage = None
         elif isinstance(storage, ffp.storage.Storage):
@@ -109,13 +149,35 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
     @property
     def vocab(self) -> Optional[ffp.vocab.Vocab]:
         """
-        Get the vocab. Returns None if no vocab is set.
-        :return: Vocab
+        Get the Vocab.
+
+        Returns None if no vocab is set.
+
+        Returns
+        -------
+        vocab : Optional[Vocab]
+            The embeddings vocabulary.
         """
         return self._vocab
 
     @vocab.setter
     def vocab(self, vocab: Optional[ffp.vocab.Vocab]):
+        """
+        Set the Vocab.
+
+        Parameters
+        ----------
+        vocab : Optional[Vocab]
+            The new embeddings vocabulary or None.
+
+        Raises
+        ------
+        AssertionError
+            * if a storage is present and `storage.shape[0]` does not match `vocab.idx_bound`.
+            * if a norms are present and `len(norms)` does not match `len(vocab)`.
+        TypeError
+            If vocab is neither a Vocab nor None.
+        """
         if vocab is None:
             self._vocab = None
         elif isinstance(vocab, ffp.vocab.Vocab):
@@ -135,13 +197,35 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
     @property
     def norms(self) -> Optional[ffp.norms.Norms]:
         """
-        Get the norms. Returns None if no norms are set.
-        :return: Norms
+        Get the Norms.
+
+        Returns None if no norms are set.
+
+        Returns
+        -------
+        norms : Optional[Norms]
+            The embedding norms.
         """
         return self._norms
 
     @norms.setter
     def norms(self, norms: Optional[ffp.norms.Norms]):
+        """
+        Set the Norms.
+
+        Parameters
+        ----------
+        norms : Optional[Norms]
+            The new embeddings Norms or None.
+
+        Raises
+        ------
+        AssertionError
+            * if a storage is present and `storage.shape[0]` is smaller than `len(norms)`.
+            * if a vocab is present and `len(norms)` does not match `len(vocab)`.
+        TypeError
+            If norms is neither Norms nor None.
+        """
         if norms is None:
             self._norms = None
         elif isinstance(norms, ffp.norms.Norms):
@@ -160,13 +244,32 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
     @property
     def metadata(self) -> Optional[ffp.metadata.Metadata]:
         """
-        Get the metadata. Returns None if no metadata is set.
-        :return: Metadata
+        Get the Metadata.
+
+        Returns None if no norms are set.
+
+        Returns
+        -------
+        metadata : Optional[Metadata]
+            The embeddings metadata.
         """
         return self._metadata
 
     @metadata.setter
     def metadata(self, metadata: Optional[ffp.metadata.Metadata]):
+        """
+        Set the Metadata.
+
+        Parameters
+        ----------
+        metadata : Optional[Metadata]
+            The new embeddings metadata or None.
+
+        Raises
+        ------
+        TypeError
+            If metadata is neither Metadata nor None.
+        """
         if metadata is None:
             self._metadata = None
         elif isinstance(metadata, ffp.metadata.Metadata):
@@ -176,8 +279,14 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
 
     def write(self, path: str):
         """
-        Write the Embeddings in finalfusion format to the given path.
-        :param path: path
+        Write the Embeddings to the given path.
+
+        Writes the Embeddings to a finalfusion file at the given path.
+
+        Parameters
+        ----------
+        path : str
+            Path of the output file.
         """
         with open(path, 'wb') as file:
             chunks = self.chunks()
@@ -192,11 +301,31 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
                   default: Optional[np.ndarray] = None
                   ) -> Union[np.ndarray, Tuple[np.ndarray, float]]:
         """
-        Look up the embedding for the given word.
-        :param word: query token
-        :param out: Optional array that the embedding should be written to.
-        :param default: default value to return if no embedding was found.
-        :return: the embedding
+        Embedding lookup.
+
+        Looks up the embedding for the input word.
+
+        If an `out` array is specified, the embedding is written into the array.
+
+        If it is not possible to retrieve an embedding for the input word, the `default`
+        value is returned. This defaults to `None`. An embedding can not be retrieved if
+        the vocabulary cannot provide an index for `word`.
+
+        This method fails if either the storage or vocab are not set.
+
+        Parameters
+        ----------
+        word : str
+            The query word.
+        out : Optional[numpy.ndarray]
+            Optional output array to write the embedding into.
+        default: Optional[numpy.ndarray]
+            Optional default value to return if no embedding can be retrieved. Defaults to None.
+
+        Returns
+        -------
+        embedding : Optional[numpy.ndarray]
+            The retrieved embedding or the default value.
         """
         idx = self._vocab.idx(word)
         if idx is None:
@@ -219,11 +348,32 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
                             default: Optional[Tuple[np.ndarray, float]] = None
                             ) -> Tuple[np.ndarray, float]:
         """
-        Look up the embedding for the given word together with its norm.
-        :param word: query token
-        :param out: Optional array that the embedding should be written to.
-        :param default: default value to return if no embedding was found.
-        :return: tuple containing the embedding and the norm
+        Embedding lookup.
+
+        Looks up the embedding for the input word together with its norm.
+
+        If an `out` array is specified, the embedding is written into the array.
+
+        If it is not possible to retrieve an embedding for the input word, the `default`
+        value is returned. This defaults to `None`. An embedding can not be retrieved if
+        the vocabulary cannot provide an index for `word`.
+
+        This method fails if either storage, vocab or norms are not set.
+
+        Parameters
+        ----------
+        word : str
+            The query word.
+        out : Optional[numpy.ndarray]
+            Optional output array to write the embedding into.
+        default: Optional[numpy.ndarray]
+            Optional default value to return if no embedding can be retrieved. Defaults to None.
+
+        Returns
+        -------
+        (embedding, norm) : Tuple[Optional[numpy.ndarray], float]
+            Tuple with the retrieved embedding or the default value at the first index and the
+            norm at the second index.
         """
         if self._norms is None:
             raise TypeError("embeddings don't contain norms chunk")
@@ -248,10 +398,19 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         Convert bucket embeddings to embeddings with explicit lookup.
 
         Multiple embeddings can still map to the same bucket, but all buckets that are not
-        indexed by in-vocabulary ngrams are eliminated. This can have a big impact on the size of
-        the embedding matrix.
+        indexed by in-vocabulary n-grams are eliminated. This can have a big impact on the
+        size of the embedding matrix.
 
-        :return: Embeddings with an explicit ngram lookup.
+        Returns
+        -------
+        embeddings : Embeddings
+            Embeddings with an ExplicitVocab instead of a hash-based vocabulary.
+
+        Raises
+        ------
+        TypeError
+            If the current vocabulary is not a hash-based vocabulary
+            (FinalfusionBucketVocab or FastTextVocab)
         """
         bucket_vocabs = (ffp.vocab.FastTextVocab,
                          ffp.vocab.FinalfusionBucketVocab)
@@ -296,9 +455,18 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
 def load_finalfusion(path: str, mmap: bool = False) -> Embeddings:
     """
     Read embeddings from a file in finalfusion format.
-    :param path: path
-    :param mmap: whether to mmap the storage
-    :return: Embeddings
+
+    Parameters
+    ----------
+    path : str
+        Path to a file with embeddings in finalfusoin format.
+    mmap : bool
+        Toggles memory mapping the storage buffer.
+
+    Returns
+    -------
+    embeddings : Embeddings
+        The embeddings from the input file.
     """
     with open(path, 'rb') as file:
         _ = Header.read_chunk(file)
@@ -325,12 +493,21 @@ def load_finalfusion(path: str, mmap: bool = False) -> Embeddings:
 
 def load_word2vec(path: str) -> Embeddings:
     """
-    Read embeddings in word2vec binary format:
+    Read embeddings in word2vec binary format.
+
     Files are expected to start with a line containing rows and cols in utf-8. Words are encoded
     in utf-8 followed by a single whitespace. After the whitespace the embedding components are
     expected as little-endian float32.
-    :param path: path
-    :return: Embeddings
+
+    Parameters
+    ----------
+    path : str
+        Path to a file with embeddings in word2vec binary format.
+
+    Returns
+    -------
+    embeddings : Embeddings
+        The embeddings from the input file.
     """
     words = []
     with open(path, 'rb') as file:
@@ -357,13 +534,22 @@ def load_word2vec(path: str) -> Embeddings:
                       vocab=ffp.vocab.SimpleVocab(words))
 
 
-def load_textdims(path) -> Embeddings:
+def load_textdims(path: str) -> Embeddings:
     """
-    Read emebddings in textdims format:
+    Read emebddings in textdims format.
+
     The first line contains whitespace separated rows and cols, the rest of the file contains
     whitespace separated word and vector components.
-    :param path:
-    :return:
+
+    Parameters
+    ----------
+    path : str
+        Path to a file with embeddings in word2vec binary format.
+
+    Returns
+    -------
+    embeddings : Embeddings
+        The embeddings from the input file.
     """
     words = []
     with open(path) as file:
@@ -382,11 +568,18 @@ def load_textdims(path) -> Embeddings:
 
 def load_text(path: str) -> Embeddings:
     """
-    Read embeddings in text format:
-    Each line contains a word followed by a whitespace and a list of whitespace separated
-    values.
-    :param path: path
-    :return: Embeddings
+    Read embeddings in text format.
+
+    Parameters
+    ----------
+    path : str
+        Path to a file with embeddings in word2vec binary format.
+
+    Returns
+    -------
+    embeddings : Embeddings
+        Embeddings from the input file. The resulting Embeddings will have a
+        SimpleVocab, NdArray and Norms.
     """
     words = []
     vecs = []
@@ -406,8 +599,16 @@ def load_text(path: str) -> Embeddings:
 def load_fastText(path: str) -> Embeddings:  # pylint: disable=invalid-name
     """
     Read embeddings from a file in fastText format.
-    :param path: path
-    :return: Embeddings
+
+    Parameters
+    ----------
+    path : str
+        Path to a file with embeddings in word2vec binary format.
+
+    Returns
+    -------
+    embeddings : Embeddings
+        The embeddings from the input file.
     """
     with open(path, 'rb') as file:
         _read_ft_header(file)
