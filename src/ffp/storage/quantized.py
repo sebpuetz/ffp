@@ -11,7 +11,7 @@ from typing import IO, Tuple, Optional
 
 import numpy as np
 
-from ffp.io import _pad_float32, ChunkIdentifier, TypeId, FinalfusionFormatError
+from ffp.io import _pad_float32, ChunkIdentifier, TypeId, FinalfusionFormatError, find_chunk
 from ffp.storage.storage import Storage
 
 
@@ -229,4 +229,36 @@ class PQ:
         return out
 
 
-__all__ = ['QuantizedArray', 'PQ']
+def load_quantized_array(path: str, mmap: bool = False) -> QuantizedArray:
+    """
+    Load a quantized array chunk from the given file.
+
+    Parameters
+    ----------
+    path : str
+        Finalfusion file with a quantized array chunk.
+    mmap : bool
+        Toggles memory mapping the array buffer as read only.
+
+    Returns
+    -------
+    storage : QuantizedArray
+        The QuantizedArray storage from the file.
+
+    Raises
+    ------
+    ValueError
+        If the file did not contain a QuantizedArray chunk.
+    """
+    with open(path, "rb") as file:
+        chunk = find_chunk(file, [ChunkIdentifier.QuantizedArray])
+        if chunk is None:
+            raise ValueError("File did not contain a QuantizedArray chunk")
+        if chunk == ChunkIdentifier.QuantizedArray:
+            if mmap:
+                return QuantizedArray.mmap_chunk(file)
+            return QuantizedArray.read_chunk(file)
+        raise ValueError(f"unknown storage type: {chunk}")
+
+
+__all__ = ['QuantizedArray', 'PQ', 'load_quantized_array']

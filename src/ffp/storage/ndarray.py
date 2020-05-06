@@ -1,5 +1,5 @@
 """
-Finalfusion storage
+Finalfusion NdArray Storage
 """
 
 import struct
@@ -7,8 +7,8 @@ from typing import IO, Tuple
 
 import numpy as np
 
-from ffp.io import ChunkIdentifier, TypeId, FinalfusionFormatError, _pad_float32, _read_binary,\
-    _write_binary
+from ffp.io import ChunkIdentifier, TypeId, FinalfusionFormatError, _pad_float32, _read_binary, \
+    _write_binary, find_chunk
 from ffp.storage.storage import Storage
 
 
@@ -16,7 +16,7 @@ class NdArray(np.ndarray, Storage):
     """
     Array storage.
 
-    Wraps an numpy matrix, either in-memory or memory-mapped.
+    Essentially a numpy matrix, either in-memory or memory-mapped.
     """
     def __new__(cls, array: np.ndarray):
         """
@@ -111,4 +111,36 @@ class NdArray(np.ndarray, Storage):
         return super().__getitem__(key).view(np.ndarray)
 
 
-__all__ = ['NdArray']
+def load_ndarray(path: str, mmap: bool = False) -> NdArray:
+    """
+    Load an array chunk from the given file.
+
+    Parameters
+    ----------
+    path : str
+        Finalfusion file with a ndarray chunk.
+    mmap : bool
+        Toggles memory mapping the array buffer as read only.
+
+    Returns
+    -------
+    storage : NdArray
+        The NdArray storage from the file.
+
+    Raises
+    ------
+    ValueError
+        If the file did not contain an NdArray chunk.
+    """
+    with open(path, "rb") as file:
+        chunk = find_chunk(file, [ChunkIdentifier.NdArray])
+        if chunk is None:
+            raise ValueError("File did not contain a NdArray chunk")
+        if chunk == ChunkIdentifier.NdArray:
+            if mmap:
+                return NdArray.mmap_chunk(file)
+            return NdArray.read_chunk(file)
+        raise ValueError(f"unknown storage type: {chunk}")
+
+
+__all__ = ['NdArray', 'load_ndarray']
