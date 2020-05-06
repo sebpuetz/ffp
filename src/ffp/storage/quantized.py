@@ -294,6 +294,7 @@ class QuantizedArray(Storage):
         return QuantizedArray(quantizer, quantized_embeddings, norms)
 
     def write_chunk(self, file: IO[bytes]):
+        _write_binary(file, "<I", int(self.chunk_identifier()))
         padding = _pad_float32(file.tell())
         chunk_len = struct.calcsize("<IIIIIQII") + padding
         proj = self._quantizer.projection is not None
@@ -305,11 +306,10 @@ class QuantizedArray(Storage):
         if norms:
             chunk_len += struct.calcsize("<f") * self._norms.size
         chunk_len += self._quantized_embeddings.size
-        chunk_header = (int(self.chunk_identifier()), chunk_len, proj, norms,
-                        self.quantized_len, self.shape[1],
-                        self.quantizer.n_centroids, self.shape[0],
-                        int(TypeId.u8), int(TypeId.f32))
-        _write_binary(file, "<IQIIIIIQII", *chunk_header)
+        chunk_header = (chunk_len, proj, norms, self.quantized_len,
+                        self.shape[1], self.quantizer.n_centroids,
+                        self.shape[0], int(TypeId.u8), int(TypeId.f32))
+        _write_binary(file, "<QIIIIIQII", *chunk_header)
         file.write(struct.pack("x" * padding))
         if proj:
             self.quantizer.projection.tofile(file)
