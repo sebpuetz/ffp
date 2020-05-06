@@ -7,10 +7,11 @@ from typing import Optional, Union, Tuple
 import numpy as np
 
 from ffp.io import Chunk, ChunkIdentifier, Header
-import ffp.metadata
-import ffp.norms
-import ffp.storage
-import ffp.vocab
+from ffp.metadata import Metadata
+from ffp.norms import Norms
+from ffp.storage import Storage, NdArray, QuantizedArray
+from ffp.subwords import FastTextIndexer
+from ffp.vocab import Vocab, FastTextVocab, FinalfusionBucketVocab, SimpleVocab, ExplicitVocab
 
 
 class Embeddings:  # pylint: disable=too-many-instance-attributes
@@ -21,10 +22,10 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
     corresponding to the embeddings of the in-vocab tokens and metadata.
     """
     def __init__(self,
-                 storage: Optional[ffp.storage.Storage] = None,
-                 vocab: Optional[ffp.vocab.Vocab] = None,
-                 norms: Optional[ffp.norms.Norms] = None,
-                 metadata: Optional[ffp.metadata.Metadata] = None):
+                 storage: Optional[Storage] = None,
+                 vocab: Optional[Vocab] = None,
+                 norms: Optional[Norms] = None,
+                 metadata: Optional[Metadata] = None):
         """
         Initialize Embeddings.
 
@@ -50,14 +51,13 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
             * norms and storage are passed, but storage.shape[0] is smaller than len(norms)
         """
         assert storage is None or isinstance(
-            storage, ffp.storage.Storage), "storage is required to be Storage"
+            storage, Storage), "storage is required to be Storage"
         assert vocab is None or isinstance(
-            vocab, ffp.vocab.Vocab), "vocab is required to be Vocab"
+            vocab, Vocab), "vocab is required to be Vocab"
         assert norms is None or isinstance(
-            norms, ffp.norms.Norms), "norms is required to be Norms"
+            norms, Norms), "norms is required to be Norms"
         assert metadata is None or isinstance(
-            metadata,
-            ffp.metadata.Metadata), "metadata is required to be Metadata"
+            metadata, Metadata), "metadata is required to be Metadata"
         if vocab is not None and storage is not None:
             assert storage.shape[
                 0] == vocab.idx_bound, "Number of embeddings needs to be equal to vocab's idx_bound"
@@ -100,7 +100,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         return chunks
 
     @property
-    def storage(self) -> Optional[ffp.storage.Storage]:
+    def storage(self) -> Optional[Storage]:
         """
         Get the storage.
 
@@ -114,7 +114,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         return self._storage
 
     @storage.setter
-    def storage(self, storage: Optional[ffp.storage.Storage]):
+    def storage(self, storage: Optional[Storage]):
         """
         Set the Storage.
 
@@ -133,7 +133,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         """
         if storage is None:
             self._storage = None
-        elif isinstance(storage, ffp.storage.Storage):
+        elif isinstance(storage, Storage):
             if self._norms is not None:
                 assert storage.shape[0] >= len(
                     self._norms
@@ -147,7 +147,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
             raise TypeError("Expected 'None' or 'Vocab'.")
 
     @property
-    def vocab(self) -> Optional[ffp.vocab.Vocab]:
+    def vocab(self) -> Optional[Vocab]:
         """
         Get the Vocab.
 
@@ -161,7 +161,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         return self._vocab
 
     @vocab.setter
-    def vocab(self, vocab: Optional[ffp.vocab.Vocab]):
+    def vocab(self, vocab: Optional[Vocab]):
         """
         Set the Vocab.
 
@@ -180,7 +180,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         """
         if vocab is None:
             self._vocab = None
-        elif isinstance(vocab, ffp.vocab.Vocab):
+        elif isinstance(vocab, Vocab):
             if self._norms is not None:
                 assert len(vocab) == len(
                     self._norms
@@ -195,7 +195,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
             raise TypeError("Expected 'None' or 'Vocab'.")
 
     @property
-    def norms(self) -> Optional[ffp.norms.Norms]:
+    def norms(self) -> Optional[Norms]:
         """
         Get the Norms.
 
@@ -209,7 +209,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         return self._norms
 
     @norms.setter
-    def norms(self, norms: Optional[ffp.norms.Norms]):
+    def norms(self, norms: Optional[Norms]):
         """
         Set the Norms.
 
@@ -228,7 +228,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         """
         if norms is None:
             self._norms = None
-        elif isinstance(norms, ffp.norms.Norms):
+        elif isinstance(norms, Norms):
             if self._vocab is not None:
                 assert len(self._vocab) == len(
                     norms), "Vocab and norms need to have same length"
@@ -242,7 +242,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
             raise TypeError("Expected 'None' or 'Norms'.")
 
     @property
-    def metadata(self) -> Optional[ffp.metadata.Metadata]:
+    def metadata(self) -> Optional[Metadata]:
         """
         Get the Metadata.
 
@@ -256,7 +256,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         return self._metadata
 
     @metadata.setter
-    def metadata(self, metadata: Optional[ffp.metadata.Metadata]):
+    def metadata(self, metadata: Optional[Metadata]):
         """
         Set the Metadata.
 
@@ -272,7 +272,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         """
         if metadata is None:
             self._metadata = None
-        elif isinstance(metadata, ffp.metadata.Metadata):
+        elif isinstance(metadata, Metadata):
             self._metadata = metadata
         else:
             raise TypeError("Expected 'None' or 'Metadata'.")
@@ -401,6 +401,9 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         indexed by in-vocabulary n-grams are eliminated. This can have a big impact on the
         size of the embedding matrix.
 
+        A side effect of this method is the conversion from a quantized storage to an
+        array storage.
+
         Returns
         -------
         embeddings : Embeddings
@@ -412,8 +415,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
             If the current vocabulary is not a hash-based vocabulary
             (FinalfusionBucketVocab or FastTextVocab)
         """
-        bucket_vocabs = (ffp.vocab.FastTextVocab,
-                         ffp.vocab.FinalfusionBucketVocab)
+        bucket_vocabs = (FastTextVocab, FinalfusionBucketVocab)
         if not isinstance(self._vocab, bucket_vocabs):
             raise TypeError(
                 "Only bucketed embeddings can be converted to explicit.")
@@ -426,7 +428,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         for ngram in vocab.subword_indexer:
             storage[len(vocab) + vocab.subword_indexer(ngram)] = self._storage[
                 len(vocab) + self._vocab.subword_indexer(ngram)]
-        return Embeddings(vocab=vocab, storage=ffp.storage.NdArray(storage))
+        return Embeddings(vocab=vocab, storage=NdArray(storage))
 
     def __getitem__(self, item):
         # no need to check for none since Vocab raises KeyError if it can't produce indices
@@ -478,9 +480,9 @@ def load_finalfusion(path: str, mmap: bool = False) -> Embeddings:
             elif chunk_id.is_vocab():
                 embeddings.vocab = _VOCAB_READERS[chunk_id](file)
             elif chunk_id == ChunkIdentifier.NdNorms:
-                embeddings.norms = ffp.norms.Norms.read_chunk(file)
+                embeddings.norms = Norms.read_chunk(file)
             elif chunk_id == ChunkIdentifier.Metadata:
-                embeddings.metadata = ffp.metadata.Metadata.read_chunk(file)
+                embeddings.metadata = Metadata.read_chunk(file)
             else:
                 chunk_id, _ = Chunk.read_chunk_header(file)
                 raise TypeError("Unknown chunk type: " + str(chunk_id))
@@ -529,9 +531,9 @@ def load_word2vec(path: str) -> Embeddings:
             matrix[row] = np.frombuffer(vec, dtype=np.float32)
     norms = np.linalg.norm(matrix, axis=1)
     matrix /= np.expand_dims(norms, axis=1)
-    return Embeddings(storage=ffp.storage.NdArray(matrix),
-                      norms=ffp.norms.Norms(norms),
-                      vocab=ffp.vocab.SimpleVocab(words))
+    return Embeddings(storage=NdArray(matrix),
+                      norms=Norms(norms),
+                      vocab=SimpleVocab(words))
 
 
 def load_textdims(path: str) -> Embeddings:
@@ -561,9 +563,9 @@ def load_textdims(path: str) -> Embeddings:
             matrix[i] = line[1:]
     norms = np.linalg.norm(matrix, axis=1)
     matrix /= np.expand_dims(norms, axis=1)
-    return Embeddings(storage=ffp.storage.NdArray(matrix),
-                      norms=ffp.norms.Norms(norms),
-                      vocab=ffp.vocab.SimpleVocab(words))
+    return Embeddings(storage=NdArray(matrix),
+                      norms=Norms(norms),
+                      vocab=SimpleVocab(words))
 
 
 def load_text(path: str) -> Embeddings:
@@ -591,9 +593,9 @@ def load_text(path: str) -> Embeddings:
         matrix = np.array(vecs, dtype=np.float32)
     norms = np.linalg.norm(matrix, axis=1)
     matrix /= np.expand_dims(norms, axis=1)
-    return Embeddings(storage=ffp.storage.NdArray(matrix),
-                      norms=ffp.norms.Norms(norms),
-                      vocab=ffp.vocab.SimpleVocab(words))
+    return Embeddings(storage=NdArray(matrix),
+                      norms=Norms(norms),
+                      vocab=SimpleVocab(words))
 
 
 def load_fastText(path: str) -> Embeddings:  # pylint: disable=invalid-name
@@ -626,8 +628,8 @@ def load_fastText(path: str) -> Embeddings:  # pylint: disable=invalid-name
             matrix[i] = matrix[indices].mean(0, keepdims=False)
         norms = np.linalg.norm(matrix[:len(vocab)], axis=1)
         matrix[:len(vocab)] /= np.expand_dims(norms, axis=1)
-        storage = ffp.storage.NdArray(matrix)
-        norms = ffp.norms.Norms(norms)
+        storage = NdArray(matrix)
+        norms = Norms(norms)
     return Embeddings(storage, vocab, norms, metadata)
 
 
@@ -655,7 +657,7 @@ def _read_ft_cfg(file):
         model = 'SkipGram'
     elif model == 3:
         model = 'Supervised'
-    metadata = ffp.metadata.Metadata({
+    metadata = Metadata({
         'dims': cfg[0],
         'window_size': cfg[1],
         'epoch': cfg[2],
@@ -699,19 +701,23 @@ def _read_ft_vocab(file, buckets, min_n, max_n):
         entry_type = struct.unpack("<B", file.read(1))[0]
         if entry_type != 0:
             raise ValueError("Non word entry", word)
-    indexer = ffp.subwords.FastTextIndexer(buckets, min_n, max_n)
-    return ffp.vocab.FastTextVocab(words, indexer)
+    indexer = FastTextIndexer(buckets, min_n, max_n)
+    return FastTextVocab(words, indexer)
 
 
 _VOCAB_READERS = {
-    ChunkIdentifier.SimpleVocab: ffp.vocab.SimpleVocab.read_chunk,
-    ChunkIdentifier.BucketSubwordVocab:
-    ffp.vocab.FinalfusionBucketVocab.read_chunk,
-    ChunkIdentifier.FastTextSubwordVocab: ffp.vocab.FastTextVocab.read_chunk,
-    ChunkIdentifier.ExplicitSubwordVocab: ffp.vocab.ExplicitVocab.read_chunk,
+    ChunkIdentifier.SimpleVocab: SimpleVocab.read_chunk,
+    ChunkIdentifier.BucketSubwordVocab: FinalfusionBucketVocab.read_chunk,
+    ChunkIdentifier.FastTextSubwordVocab: FastTextVocab.read_chunk,
+    ChunkIdentifier.ExplicitSubwordVocab: ExplicitVocab.read_chunk,
 }
 
 _STORAGE_READERS = {
-    ChunkIdentifier.NdArray: ffp.storage.NdArray.load,
-    ChunkIdentifier.QuantizedArray: ffp.storage.QuantizedArray.load,
+    ChunkIdentifier.NdArray: NdArray.load,
+    ChunkIdentifier.QuantizedArray: QuantizedArray.load,
 }
+
+__all__ = [
+    'Embeddings', 'load_finalfusion', 'load_fastText', 'load_word2vec',
+    'load_textdims', 'load_text'
+]

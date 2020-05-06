@@ -6,6 +6,9 @@ from libc.stdint cimport uint32_t
 import cython
 
 cdef class ExplicitIndexer:
+    """
+    ExplicitIndexer
+    """
     cdef dict _ngram_index
     cdef list _ngrams
     cdef Py_ssize_t _bound

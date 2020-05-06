@@ -5,10 +5,10 @@ Storage
 import abc
 from typing import Tuple, IO
 
-import ffp.io
+from ffp.io import Chunk
 
 
-class Storage(ffp.io.Chunk):
+class Storage(Chunk):
     """
     Common interface to finalfusion storage types.
     """
@@ -43,3 +43,6 @@ class Storage(ffp.io.Chunk):
         :param file: File in finalfusion format containing a storage chunk.
         :return: Storage
         """
+
+
+__all__ = ['Storage']

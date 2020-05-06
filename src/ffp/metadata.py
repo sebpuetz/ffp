@@ -7,23 +7,23 @@ from typing import IO
 
 import toml
 
-import ffp.io
+from ffp.io import Chunk, ChunkIdentifier, find_chunk
 
 
-class Metadata(dict, ffp.io.Chunk):
+class Metadata(dict, Chunk):
     """
     Embeddings metadata
     """
     @staticmethod
     def chunk_identifier():
-        return ffp.io.ChunkIdentifier.Metadata
+        return ChunkIdentifier.Metadata
 
     @staticmethod
     def read_chunk(file: IO[bytes]) -> 'Metadata':
         file.seek(-12, 1)
         chunk_id, chunk_len = struct.unpack("<IQ",
                                             file.read(struct.calcsize("<IQ")))
-        assert ffp.io.ChunkIdentifier(chunk_id) == Metadata.chunk_identifier()
+        assert ChunkIdentifier(chunk_id) == Metadata.chunk_identifier()
         return Metadata(toml.loads(file.read(chunk_len).decode("utf-8")))
 
     def write_chunk(self, file: IO[bytes]):
@@ -39,9 +39,12 @@ def load_metadata(path: str) -> Metadata:
     :param path: filename
     """
     with open(path, 'rb') as file:
-        chunk = ffp.io.find_chunk(file, [ffp.io.ChunkIdentifier.Metadata])
+        chunk = find_chunk(file, [ChunkIdentifier.Metadata])
         if chunk is None:
             raise IOError("cannot find Metadata chunk")
-        if chunk == ffp.io.ChunkIdentifier.Metadata:
+        if chunk == ChunkIdentifier.Metadata:
             return Metadata.read_chunk(file)
         raise IOError("unexpected chunk: " + str(chunk))
+
+
+__all__ = ['Metadata', 'load_metadata']

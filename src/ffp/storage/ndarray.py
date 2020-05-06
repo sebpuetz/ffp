@@ -109,3 +109,6 @@ class NdArray(np.ndarray, Storage):
         if isinstance(key, slice):
             return super().__getitem__(key)
         return super().__getitem__(key).view(np.ndarray)
+
+
+__all__ = ['NdArray']

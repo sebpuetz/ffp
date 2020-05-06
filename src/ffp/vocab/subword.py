@@ -595,3 +595,10 @@ def _write_bucket_vocab(vocab: Union[FinalfusionBucketVocab, FastTextVocab],
                     vocab.max_n, buckets)
     _write_binary(file, "<IQQIII", *chunk_header)
     _write_words_binary((bytes(word, "utf-8") for word in vocab.words), file)
+
+
+__all__ = [
+    'SubwordVocab', 'FastTextVocab', 'FinalfusionBucketVocab', 'ExplicitVocab',
+    'load_explicit_vocab', 'load_fasttext_vocab',
+    'load_finalfusion_bucket_vocab'
+]

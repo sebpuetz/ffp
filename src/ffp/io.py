@@ -316,3 +316,9 @@ def _read_binary(file: IO[bytes], struct_fmt: str) -> Optional[Tuple[int]]:
     if len(buf) != size:
         raise FinalfusionFormatError(f'Could not read {size} bytes from file')
     return struct.unpack(struct_fmt, buf)
+
+
+__all__ = [
+    'ChunkIdentifier', 'Chunk', 'Header', 'FinalfusionFormatError', 'TypeId',
+    'find_chunk'
+]

@@ -153,3 +153,6 @@ def _read_items(file: IO[bytes], length: int,
         else:
             index[word] = len(index)
     return items, index
+
+
+__all__ = ['Vocab']

@@ -124,3 +124,6 @@ def load_simple_vocab(path: str) -> SimpleVocab:
         if chunk is None:
             raise ValueError('File did not contain a SimpleVocab}')
         return SimpleVocab.read_chunk(file)
+
+
+__all__ = ['SimpleVocab', 'load_simple_vocab']

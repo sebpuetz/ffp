@@ -227,3 +227,6 @@ class PQ:
         if self.projection is not None:
             out.dot(self._projection.T, out=out)
         return out
+
+
+__all__ = ['QuantizedArray', 'PQ']

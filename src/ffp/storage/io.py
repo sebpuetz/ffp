@@ -59,3 +59,6 @@ def load_quantized_array(path: str, mmap: bool = False) -> Storage:
         if chunk == ffp.io.ChunkIdentifier.QuantizedArray:
             return QuantizedArray.load(file, mmap)
         raise ValueError("Can't find QuantizedArray.")
+
+
+__all__ = ['load_ndarray', 'load_quantized_array', 'load_storage']

@@ -66,3 +66,6 @@ def load_norms(path: str):
         if chunk == ChunkIdentifier.NdNorms:
             return Norms.read_chunk(file)
         raise IOError("unexpected chunk: " + str(chunk))
+
+
+__all__ = ['Norms', 'load_norms']

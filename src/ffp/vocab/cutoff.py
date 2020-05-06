@@ -76,3 +76,6 @@ def _filter_and_sort(cnt: Counter, cutoff: Cutoff):
         keys = keys[:cutoff_v + 1]
         cnt = cnt[:cutoff_v + 1]
     return list(keys), list(cnt)
+
+
+__all__ = ['Cutoff']
