@@ -20,16 +20,15 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install cython
-        python setup.py develop
+        pip install -e .
     - name: pylint
       run: |
         pip install pylint==2.4.4
-        pylint ffp
+        pylint src/ffp
     - name: yapf
       run: |
         pip install yapf==0.28
-        yapf ffp -r --diff
+        yapf src/ffp -r --diff
         yapf tests -r --diff
     - name: Test with pytest
       run: |
