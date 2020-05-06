@@ -77,10 +77,10 @@ def load_norms(path: str):
     with open(path, "rb") as file:
         chunk = find_chunk(file, [ChunkIdentifier.NdNorms])
         if chunk is None:
-            raise IOError("cannot find Norms chunk")
+            raise ValueError("File did not contain a Norms chunk")
         if chunk == ChunkIdentifier.NdNorms:
             return Norms.read_chunk(file)
-        raise IOError(f"unexpected chunk: {str(chunk)}")
+        raise ValueError(f"unexpected chunk: {str(chunk)}")
 
 
 __all__ = ['Norms', 'load_norms']
