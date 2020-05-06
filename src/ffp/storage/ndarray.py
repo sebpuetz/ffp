@@ -87,8 +87,8 @@ class NdArray(np.ndarray, Storage):
             If the TypeId does not match TypeId.f32
         """
         rows, cols = _read_binary(file, "<QI")
-        type_id = TypeId(_read_binary(file, "<I")[0])
-        if TypeId.f32 != type_id:
+        type_id = _read_binary(file, "<I")[0]
+        if int(TypeId.f32) != type_id:
             raise FinalfusionFormatError(
                 f"Invalid Type, expected {TypeId.f32}, got {type_id}")
         file.seek(_pad_float32(file.tell()), 1)
