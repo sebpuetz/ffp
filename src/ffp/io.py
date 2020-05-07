@@ -16,7 +16,8 @@ files.
 import struct
 from abc import ABC, abstractmethod
 from enum import unique, IntEnum
-from typing import IO, Optional, Tuple, List
+from os import PathLike
+from typing import Optional, Tuple, List, BinaryIO, Union
 
 _MAGIC = b'FiFu'
 VERSION = 0
@@ -26,26 +27,26 @@ class Chunk(ABC):
     """
     Basic building blocks of finalfusion files.
     """
-    def write(self, path: str):
+    def write(self, file: Union[str, bytes, int, PathLike]):
         """
         Write the Chunk as a standalone finalfusion file.
 
         Parameters
         ----------
-        path : str
-            Output path
+        file : str, bytes, int, PathLike
+            Output file
 
         Raises
         ------
         TypeError
             If the Chunk is a :class:`Header`.
         """
-        with open(path, "wb") as file:
+        with open(file, "wb") as outf:
             chunk_id = self.chunk_identifier()
             if chunk_id == ChunkIdentifier.Header:
                 raise TypeError("Cannot write header to file by itself")
-            Header([chunk_id]).write_chunk(file)
-            self.write_chunk(file)
+            Header([chunk_id]).write_chunk(outf)
+            self.write_chunk(outf)
 
     @staticmethod
     @abstractmethod
@@ -59,7 +60,7 @@ class Chunk(ABC):
         """
     @staticmethod
     @abstractmethod
-    def read_chunk(file: IO[bytes]) -> 'Chunk':
+    def read_chunk(file: BinaryIO) -> 'Chunk':
         """
         Read the Chunk and return it.
 
@@ -68,7 +69,7 @@ class Chunk(ABC):
 
         Parameters
         -----------
-        file : IO[bytes]
+        file : BinaryIO
             a finalfusion file containing the given Chunk
 
         Returns
@@ -77,17 +78,17 @@ class Chunk(ABC):
             The chunk read from the file.
         """
     @abstractmethod
-    def write_chunk(self, file: IO[bytes]):
+    def write_chunk(self, file: BinaryIO):
         """
         Write the Chunk to a file.
 
         Parameters
         ----------
-        file : IO[bytes]
+        file : BinaryIO
             Output file for the Chunk
         """
     @staticmethod
-    def read_chunk_header(file: IO[bytes]
+    def read_chunk_header(file: BinaryIO
                           ) -> Optional[Tuple['ChunkIdentifier', int]]:
         """
         Reads the chunk header.
@@ -98,7 +99,7 @@ class Chunk(ABC):
 
         Parameters
         ----------
-        file : IO[bytes]
+        file : BinaryIO
             a finalfusion file positioned before a chunk header.
 
         Returns
@@ -143,7 +144,7 @@ class Header(Chunk):
         return ChunkIdentifier.Header
 
     @staticmethod
-    def read_chunk(file) -> 'Header':
+    def read_chunk(file: BinaryIO) -> 'Header':
         magic = file.read(4)
         if magic != _MAGIC:
             invalid_magic = magic.decode('ascii', errors='ignore')
@@ -156,14 +157,14 @@ class Header(Chunk):
         chunk_ids = list(_read_binary(file, f'<{n_chunks}I'))
         return Header(chunk_ids)
 
-    def write_chunk(self, file):
+    def write_chunk(self, file: BinaryIO):
         file.write(_MAGIC)
         n_chunks = len(self.chunk_ids)
         _write_binary(file, f'<II{n_chunks}I', VERSION, n_chunks,
                       *self.chunk_ids)
 
 
-def find_chunk(file: IO[bytes],
+def find_chunk(file: BinaryIO,
                chunks: List['ChunkIdentifier']) -> Optional['ChunkIdentifier']:
     """
     Find a :class:`Chunk` in a file.
@@ -179,7 +180,7 @@ def find_chunk(file: IO[bytes],
 
     Parameters
     ----------
-    file : IO[bytes]
+    file : BinaryIO
         finalfusion file
 
     chunks : List[ChunkIdentifier]
@@ -218,7 +219,7 @@ class ChunkIdentifier(IntEnum):
     FastTextSubwordVocab = 7
     ExplicitSubwordVocab = 8
 
-    def is_storage(self):
+    def is_storage(self) -> bool:
         """
         Return if this Identifier belongs to a storage.
 
@@ -230,7 +231,7 @@ class ChunkIdentifier(IntEnum):
             ChunkIdentifier.NdArray, ChunkIdentifier.QuantizedArray
         ]
 
-    def is_vocab(self):
+    def is_vocab(self) -> bool:
         """
         Return if this Identifier belongs to a vocab.
 
@@ -260,7 +261,7 @@ class FinalfusionFormatError(Exception):
     """
 
 
-def _pad_float32(pos):
+def _pad_float32(pos: int) -> int:
     """
     Helper method to pad to the next page boundary from a given position.
 
@@ -278,7 +279,7 @@ def _pad_float32(pos):
     return float_size - (pos % float_size)
 
 
-def _write_binary(file: IO[bytes], struct_fmt: str, *args):
+def _write_binary(file: BinaryIO, struct_fmt: str, *args):
     """
     Helper method to write binary data according to the format string.
     """
@@ -286,21 +287,21 @@ def _write_binary(file: IO[bytes], struct_fmt: str, *args):
     file.write(data)
 
 
-def _read_binary(file: IO[bytes], struct_fmt: str) -> Optional[Tuple[int]]:
+def _read_binary(file: BinaryIO, struct_fmt: str) -> Optional[Tuple[int]]:
     """
     Helper method to read binary data from a file according to the format
     string.
 
     Parameters
     ----------
-    file : IO[bytes]
+    file : BinaryIO
         Output file
     struct_fmt : str
         struct format string
 
     Returns
     -------
-    data : Optional[tuple]
+    data : tuple, optional
         Returns the unpacked data as a tuple. If **no** data could be read,
         None is returned
 

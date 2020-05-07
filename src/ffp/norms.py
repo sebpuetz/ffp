@@ -3,6 +3,8 @@ Norms module.
 """
 
 import struct
+from os import PathLike
+from typing import BinaryIO, Union
 
 import numpy as np
 
@@ -30,7 +32,7 @@ class Norms(np.ndarray, Chunk):
         return ChunkIdentifier.NdNorms
 
     @staticmethod
-    def read_chunk(file) -> 'Norms':
+    def read_chunk(file: BinaryIO) -> 'Norms':
         n_norms, type_id = _read_binary(file, "<QI")
         if int(TypeId.f32) != type_id:
             raise FinalfusionFormatError(
@@ -40,7 +42,7 @@ class Norms(np.ndarray, Chunk):
         array = np.fromfile(file=file, count=n_norms, dtype=np.float32)
         return Norms(array)
 
-    def write_chunk(self, file):
+    def write_chunk(self, file: BinaryIO):
         _write_binary(file, "<I", int(self.chunk_identifier()))
         padding = _pad_float32(file.tell())
         chunk_len = struct.calcsize(
@@ -55,13 +57,13 @@ class Norms(np.ndarray, Chunk):
         return super().__getitem__(key)
 
 
-def load_norms(path: str):
+def load_norms(file: Union[str, bytes, int, PathLike]) -> Norms:
     """
     Load an Norms chunk from the given file.
 
     Parameters
     ----------
-    path : str
+    file : str, bytes, int, PathLike
         Finalfusion file with a norms chunk.
 
     Returns
@@ -74,12 +76,12 @@ def load_norms(path: str):
     ValueError
         If the file did not contain an Norms chunk.
     """
-    with open(path, "rb") as file:
-        chunk = find_chunk(file, [ChunkIdentifier.NdNorms])
+    with open(file, "rb") as inf:
+        chunk = find_chunk(inf, [ChunkIdentifier.NdNorms])
         if chunk is None:
             raise ValueError("File did not contain a Norms chunk")
         if chunk == ChunkIdentifier.NdNorms:
-            return Norms.read_chunk(file)
+            return Norms.read_chunk(inf)
         raise ValueError(f"unexpected chunk: {str(chunk)}")
 
 

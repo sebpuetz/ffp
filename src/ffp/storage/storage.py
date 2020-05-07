@@ -3,7 +3,7 @@ Storage
 """
 
 import abc
-from typing import Tuple, IO
+from typing import Tuple, BinaryIO
 
 from ffp.io import Chunk
 
@@ -24,7 +24,7 @@ class Storage(Chunk):
         pass
 
     @classmethod
-    def load(cls, file: IO[bytes], mmap=False) -> 'Storage':
+    def load(cls, file: BinaryIO, mmap=False) -> 'Storage':
         """
         Load Storage from the given finalfusion file.
 
@@ -36,7 +36,7 @@ class Storage(Chunk):
 
     @staticmethod
     @abc.abstractmethod
-    def mmap_chunk(file: IO[bytes]) -> 'Storage':
+    def mmap_chunk(file: BinaryIO) -> 'Storage':
         """
 
         Memory maps the storage as a read-only buffer.

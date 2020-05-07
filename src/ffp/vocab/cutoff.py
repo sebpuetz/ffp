@@ -3,7 +3,8 @@ Frequency Cutoffs
 """
 import collections
 import operator
-from typing import Counter
+from os import PathLike
+from typing import Counter, Union
 
 
 class Cutoff:  # pylint: disable=too-few-public-methods
@@ -38,9 +39,9 @@ class Cutoff:  # pylint: disable=too-few-public-methods
                 + mode)
 
 
-def _count_words(filename) -> Counter:
+def _count_words(file: Union[str, bytes, int, PathLike]) -> Counter:
     cnt = collections.Counter()
-    with open(filename) as inf:
+    with open(file) as inf:
         for line in inf:
             for word in line.strip().split():
                 cnt[word] += 1

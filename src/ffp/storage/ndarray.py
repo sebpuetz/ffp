@@ -3,7 +3,8 @@ Finalfusion NdArray Storage
 """
 
 import struct
-from typing import IO, Tuple
+from os import PathLike
+from typing import Tuple, BinaryIO, Union
 
 import numpy as np
 
@@ -64,7 +65,7 @@ class NdArray(np.ndarray, Storage):
                       shape=(rows, cols)))
 
     @staticmethod
-    def _read_array_header(file: IO[bytes]) -> Tuple[int, int]:
+    def _read_array_header(file: BinaryIO) -> Tuple[int, int]:
         """
         Helper method to read the header of an NdArray chunk.
 
@@ -73,7 +74,7 @@ class NdArray(np.ndarray, Storage):
 
         Parameters
         ----------
-        file : IO[bytes]
+        file : BinaryIO
             finalfusion file with a storage at the start of a NdArray chunk.
 
         Returns
@@ -94,7 +95,7 @@ class NdArray(np.ndarray, Storage):
         file.seek(_pad_float32(file.tell()), 1)
         return rows, cols
 
-    def write_chunk(self, file: IO[bytes]):
+    def write_chunk(self, file: BinaryIO):
         _write_binary(file, "<I", int(self.chunk_identifier()))
         padding = _pad_float32(file.tell())
         chunk_len = struct.calcsize("<QII") + padding + struct.calcsize(
@@ -111,13 +112,14 @@ class NdArray(np.ndarray, Storage):
         return super().__getitem__(key).view(np.ndarray)
 
 
-def load_ndarray(path: str, mmap: bool = False) -> NdArray:
+def load_ndarray(file: Union[str, bytes, int, PathLike],
+                 mmap: bool = False) -> NdArray:
     """
     Load an array chunk from the given file.
 
     Parameters
     ----------
-    path : str
+    file : str, bytes, int, PathLike
         Finalfusion file with a ndarray chunk.
     mmap : bool
         Toggles memory mapping the array buffer as read only.
@@ -132,14 +134,14 @@ def load_ndarray(path: str, mmap: bool = False) -> NdArray:
     ValueError
         If the file did not contain an NdArray chunk.
     """
-    with open(path, "rb") as file:
-        chunk = find_chunk(file, [ChunkIdentifier.NdArray])
+    with open(file, "rb") as inf:
+        chunk = find_chunk(inf, [ChunkIdentifier.NdArray])
         if chunk is None:
             raise ValueError("File did not contain a NdArray chunk")
         if chunk == ChunkIdentifier.NdArray:
             if mmap:
-                return NdArray.mmap_chunk(file)
-            return NdArray.read_chunk(file)
+                return NdArray.mmap_chunk(inf)
+            return NdArray.read_chunk(inf)
         raise ValueError(f"unknown storage type: {chunk}")
 
 

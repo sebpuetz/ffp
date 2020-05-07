@@ -5,7 +5,8 @@ Finalfusion Subword Vocabularies
 import collections
 import struct
 from abc import abstractmethod
-from typing import List, Optional, Tuple, Any, Union, IO, Dict
+from os import PathLike
+from typing import List, Optional, Tuple, Any, Union, Dict, BinaryIO
 
 from ffp.io import ChunkIdentifier, find_chunk, _write_binary, _read_binary
 from ffp.subwords import ExplicitIndexer, FastTextIndexer, FinalfusionHashIndexer, word_ngrams
@@ -16,9 +17,9 @@ from ffp.vocab.cutoff import Cutoff, _count_words, _filter_and_sort
 
 class SubwordVocab(Vocab):
     """
-    Vocabulary that offers subword lookups.
+    Interface for vocabularies with subword lookups.
     """
-    def idx(self, item, default=None):
+    def idx(self, item: str, default=None) -> Optional[Union[List[int], int]]:
         idx = self.word_index.get(item)
         if idx is not None:
             return idx
@@ -65,12 +66,13 @@ class SubwordVocab(Vocab):
 
         The subword indexer produces indices for n-grams.
 
-        In case of bucket vocabularies, this is a hash-based indexer. For explicit subword
-        vocabularies, this is a lookup table.
+        In case of bucket vocabularies, this is a hash-based indexer
+        (:class:`.FinalfusionHashIndexer`, :class:`.FastTextIndexer`). For explicit subword
+        vocabularies, this is an :class:`.ExplicitIndexer`.
 
         Returns
         -------
-        subword_indexer : Union[ExplicitIndexer, FinalfusionHashIndexer, FastTextIndexer]
+        subword_indexer : ExplicitIndexer, FinalfusionHashIndexer, FastTextIndexer
             The subword indexer of the vocabulary.
         """
     def subwords(self, item: str, bracket: bool = True) -> List[str]:
@@ -159,10 +161,10 @@ class FinalfusionBucketVocab(SubwordVocab):
         ----------
         words : List[str]
             List of unique words
-        indexer : FinalfusionHashIndexer
+        indexer : FinalfusionHashIndexer, optional
             Subword indexer to use for the vocabulary. Defaults to an indexer
             with 2^21 buckets with range 3-6.
-        index : Optional[Dict[str, int]]
+        index : Dict[str, int], optional
             Dictionary providing an entry -> index mapping.
 
         Raises
@@ -180,7 +182,7 @@ class FinalfusionBucketVocab(SubwordVocab):
 
     @staticmethod
     def from_corpus(
-            filename,
+            file: Union[str, bytes, int, PathLike],
             cutoff=Cutoff(30, mode='min_freq'),
             indexer: FinalfusionHashIndexer = FinalfusionHashIndexer(21),
     ) -> Tuple['FinalfusionBucketVocab', List[int]]:
@@ -189,7 +191,7 @@ class FinalfusionBucketVocab(SubwordVocab):
 
         Parameters
         ----------
-        filename : str
+        file : str, bytes, int, PathLike
             File with white-space separated tokens.
         cutoff : Cutoff
             Frequency cutoff or target size to restrict vocabulary size. Defaults to
@@ -210,7 +212,7 @@ class FinalfusionBucketVocab(SubwordVocab):
             If the indexer is not a FinalfusionHashIndexer.
         """
         assert isinstance(indexer, FinalfusionHashIndexer)
-        cnt = _count_words(filename)
+        cnt = _count_words(file)
         words, counts = _filter_and_sort(cnt, cutoff)
         return FinalfusionBucketVocab(words, indexer), counts
 
@@ -225,7 +227,7 @@ class FinalfusionBucketVocab(SubwordVocab):
         """
         return _to_explicit(self)
 
-    def write_chunk(self, file: IO[bytes]):
+    def write_chunk(self, file: BinaryIO):
         _write_bucket_vocab(self, file)
 
     @property
@@ -241,7 +243,7 @@ class FinalfusionBucketVocab(SubwordVocab):
         return self._index
 
     @staticmethod
-    def read_chunk(file) -> 'FinalfusionBucketVocab':
+    def read_chunk(file: BinaryIO) -> 'FinalfusionBucketVocab':
         length, min_n, max_n, buckets = _read_binary(file, "<QIII")
         words, index = _read_items(file, length)
         indexer = FinalfusionHashIndexer(buckets, min_n, max_n)
@@ -286,10 +288,10 @@ class FastTextVocab(SubwordVocab):
         ----------
         words : List[str]
             List of unique words
-        indexer : FastTextIndexer
+        indexer : FastTextIndexer, optional
             Subword indexer to use for the vocabulary. Defaults to an indexer
             with 2,000,000 buckets with range 3-6.
-        index : Optional[Dict[str, int]]
+        index : Dict[str, int], optional
             Dictionary providing an entry -> index mapping.
 
         Raises
@@ -307,7 +309,7 @@ class FastTextVocab(SubwordVocab):
 
     @staticmethod
     def from_corpus(
-            filename,
+            file: Union[str, bytes, int, PathLike],
             cutoff: Cutoff = Cutoff(30, mode='min_freq'),
             indexer: FastTextIndexer = FastTextIndexer(2000000),
     ) -> Tuple['FastTextVocab', List[int]]:
@@ -316,7 +318,7 @@ class FastTextVocab(SubwordVocab):
 
         Parameters
         ----------
-        filename : str
+        file: str, bytes, int, PathLike
             File with white-space separated tokens.
         cutoff : Cutoff
             Frequency cutoff or target size to restrict vocabulary size. Defaults to
@@ -337,7 +339,7 @@ class FastTextVocab(SubwordVocab):
             If the indexer is not a FastTextIndexer.
         """
         assert isinstance(indexer, FastTextIndexer)
-        cnt = _count_words(filename)
+        cnt = _count_words(file)
         words, counts = _filter_and_sort(cnt, cutoff)
         return FastTextVocab(words, indexer), counts
 
@@ -365,13 +367,13 @@ class FastTextVocab(SubwordVocab):
         return self._index
 
     @staticmethod
-    def read_chunk(file) -> 'FastTextVocab':
+    def read_chunk(file: BinaryIO) -> 'FastTextVocab':
         length, min_n, max_n, buckets = _read_binary(file, "<QIII")
         words, index = _read_items(file, length)
         indexer = FastTextIndexer(buckets, min_n, max_n)
         return FastTextVocab(words, indexer, index)
 
-    def write_chunk(self, file: IO[bytes]):
+    def write_chunk(self, file: BinaryIO):
         _write_bucket_vocab(self, file)
 
     @staticmethod
@@ -400,7 +402,7 @@ class ExplicitVocab(SubwordVocab):
         self._indexer = indexer
 
     @staticmethod
-    def from_corpus(filename,
+    def from_corpus(file: Union[str, bytes, int, PathLike],
                     ngram_range=(3, 6),
                     token_cutoff: Cutoff = Cutoff(30, mode='min_freq'),
                     ngram_cutoff: Cutoff = Cutoff(30, mode='min_freq')):
@@ -409,7 +411,7 @@ class ExplicitVocab(SubwordVocab):
 
         Parameters
         ----------
-        filename : str
+        file: str, bytes, int, PathLike
             File with white-space separated tokens.
         ngram_range : Tuple[int, int]
             Specifies the n-gram range for the indexer.
@@ -422,12 +424,12 @@ class ExplicitVocab(SubwordVocab):
 
         Returns
         -------
-        (vocab, counts) : Tuple[FastTextVocab, List[int], List[int]
+        (vocab, counts) : Tuple[FastTextVocab, List[int], List[int]]
             Tuple containing the Vocabulary as first item, counts of in-vocabulary tokens
             as the second item and in-vocabulary ngram counts as the last item.
         """
         min_n, max_n = ngram_range
-        cnt = _count_words(filename)
+        cnt = _count_words(file)
         ngram_cnt = collections.Counter()
         for word, count in cnt.items():
             for ngram in word_ngrams(word, min_n, max_n):
@@ -454,7 +456,7 @@ class ExplicitVocab(SubwordVocab):
         return ChunkIdentifier.ExplicitSubwordVocab
 
     @staticmethod
-    def read_chunk(file) -> 'ExplicitVocab':
+    def read_chunk(file: BinaryIO) -> 'ExplicitVocab':
         length, ngram_length, min_n, max_n = _read_binary(file, "<QQII")
         words, word_index = _read_items(file, length)
         ngrams, ngram_index = _read_items(file, ngram_length, indices=True)
@@ -492,13 +494,14 @@ class ExplicitVocab(SubwordVocab):
         return super(ExplicitVocab, self).__eq__(other)
 
 
-def load_finalfusion_bucket_vocab(path: str) -> FinalfusionBucketVocab:
+def load_finalfusion_bucket_vocab(file: Union[str, bytes, int, PathLike]
+                                  ) -> FinalfusionBucketVocab:
     """
     Load a FinalfusionBucketVocab from the given finalfusion file.
 
     Parameters
     ----------
-    path : str
+    file : str, bytes, int, PathLike
         Path to file containing a FinalfusionBucketVocab chunk.
 
     Returns
@@ -506,20 +509,21 @@ def load_finalfusion_bucket_vocab(path: str) -> FinalfusionBucketVocab:
     vocab : FinalfusionBucketVocab
         Returns the first FinalfusionBucketVocab in the file.
     """
-    with open(path, "rb") as file:
-        chunk = find_chunk(file, [ChunkIdentifier.BucketSubwordVocab])
+    with open(file, "rb") as inf:
+        chunk = find_chunk(inf, [ChunkIdentifier.BucketSubwordVocab])
         if chunk is None:
             raise ValueError('File did not contain a FinalfusionBucketVocab}')
-        return FinalfusionBucketVocab.read_chunk(file)
+        return FinalfusionBucketVocab.read_chunk(inf)
 
 
-def load_fasttext_vocab(path: str) -> FastTextVocab:
+def load_fasttext_vocab(file: Union[str, bytes, int, PathLike]
+                        ) -> FastTextVocab:
     """
     Load a FastTextVocab from the given finalfusion file.
 
     Parameters
     ----------
-    path : str
+    file : str, bytes, int, PathLike
         Path to file containing a FastTextVocab chunk.
 
     Returns
@@ -527,20 +531,21 @@ def load_fasttext_vocab(path: str) -> FastTextVocab:
     vocab : FastTextVocab
         Returns the first FastTextVocab in the file.
     """
-    with open(path, "rb") as file:
-        chunk = find_chunk(file, [ChunkIdentifier.FastTextSubwordVocab])
+    with open(file, "rb") as inf:
+        chunk = find_chunk(inf, [ChunkIdentifier.FastTextSubwordVocab])
         if chunk is None:
             raise ValueError('File did not contain a FastTextVocab}')
-        return FastTextVocab.read_chunk(file)
+        return FastTextVocab.read_chunk(inf)
 
 
-def load_explicit_vocab(path: str) -> ExplicitVocab:
+def load_explicit_vocab(file: Union[str, bytes, int, PathLike]
+                        ) -> ExplicitVocab:
     """
     Load a ExplicitVocab from the given finalfusion file.
 
     Parameters
     ----------
-    path : str
+    file : str, bytes, int, PathLike
         Path to file containing a ExplicitVocab chunk.
 
     Returns
@@ -548,11 +553,11 @@ def load_explicit_vocab(path: str) -> ExplicitVocab:
     vocab : ExplicitVocab
         Returns the first ExplicitVocab in the file.
     """
-    with open(path, "rb") as file:
-        chunk = find_chunk(file, [ChunkIdentifier.ExplicitSubwordVocab])
+    with open(file, "rb") as inf:
+        chunk = find_chunk(inf, [ChunkIdentifier.ExplicitSubwordVocab])
         if chunk is None:
             raise ValueError('File did not contain a ExplicitVocab}')
-        return ExplicitVocab.read_chunk(file)
+        return ExplicitVocab.read_chunk(inf)
 
 
 def _to_explicit(vocab: Union[FinalfusionBucketVocab, FastTextVocab]
@@ -578,7 +583,7 @@ def _to_explicit(vocab: Union[FinalfusionBucketVocab, FastTextVocab]
 
 
 def _write_bucket_vocab(vocab: Union[FinalfusionBucketVocab, FastTextVocab],
-                        file: IO[bytes]):
+                        file: BinaryIO):
     min_n_max_n_size = struct.calcsize("<II")
     buckets_size = struct.calcsize("<I")
     chunk_length = _calculate_serialized_size(vocab.words)

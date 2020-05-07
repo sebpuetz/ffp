@@ -1,6 +1,8 @@
 """
 Finalfusion vocabularies.
 """
+from os import PathLike
+from typing import Union
 
 from ffp.io import ChunkIdentifier, find_chunk
 
@@ -12,29 +14,29 @@ from ffp.vocab.vocab import Vocab
 from ffp.vocab.cutoff import Cutoff
 
 
-def load_vocab(path: str) -> Vocab:
+def load_vocab(file: Union[str, bytes, int, PathLike]) -> Vocab:
     """
-    Load any vocabulary from a finalfusion file.
+    Load a vocabulary from a finalfusion file.
 
     Loads the first known vocabulary from a finalfusion file.
 
     Parameters
     ----------
-    path : str
+    file : str, bytes, int, PathLike
         Path to file containing a finalfusion vocab chunk.
 
     Returns
     -------
-    vocab : Union[SimpleVocab]
-        First vocabulary in the file.
+    vocab : SimpleVocab, FastTextVocab, FinalfusionBucketVocab, ExplicitVocab
+        First Vocab in the file.
 
     Raises
     ------
     ValueError
          If the file did not contain a vocabulary.
     """
-    with open(path, "rb") as file:
-        chunk = find_chunk(file, [
+    with open(file, "rb") as inf:
+        chunk = find_chunk(inf, [
             ChunkIdentifier.SimpleVocab, ChunkIdentifier.FastTextSubwordVocab,
             ChunkIdentifier.ExplicitSubwordVocab,
             ChunkIdentifier.BucketSubwordVocab
@@ -42,13 +44,13 @@ def load_vocab(path: str) -> Vocab:
         if chunk is None:
             raise ValueError('File did not contain a vocabulary')
         if chunk == ChunkIdentifier.SimpleVocab:
-            return SimpleVocab.read_chunk(file)
+            return SimpleVocab.read_chunk(inf)
         if chunk == ChunkIdentifier.BucketSubwordVocab:
-            return FinalfusionBucketVocab.read_chunk(file)
+            return FinalfusionBucketVocab.read_chunk(inf)
         if chunk == ChunkIdentifier.ExplicitSubwordVocab:
-            return ExplicitVocab.read_chunk(file)
+            return ExplicitVocab.read_chunk(inf)
         if chunk == ChunkIdentifier.FastTextSubwordVocab:
-            return FastTextVocab.read_chunk(file)
+            return FastTextVocab.read_chunk(inf)
         raise ValueError('Unexpected vocabulary chunk.')
 
 

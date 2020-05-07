@@ -1,6 +1,9 @@
 """
 Finalfusion storage
 """
+from os import PathLike
+from typing import Union
+
 from ffp.io import find_chunk, ChunkIdentifier
 
 from ffp.storage.storage import Storage
@@ -8,7 +11,8 @@ from ffp.storage.ndarray import NdArray, load_ndarray
 from ffp.storage.quantized import QuantizedArray, load_quantized_array
 
 
-def load_storage(path: str, mmap: bool = False) -> Storage:
+def load_storage(file: Union[str, bytes, int, PathLike],
+                 mmap: bool = False) -> Storage:
     """
     Load any storage from a finalfusion file.
 
@@ -16,7 +20,7 @@ def load_storage(path: str, mmap: bool = False) -> Storage:
 
     Parameters
     ----------
-    path : str
+    file : str
         Path to file containing a finalfusion storage chunk.
     mmap : bool
         Toggles memory mapping the storage buffer as read-only.
@@ -31,15 +35,15 @@ def load_storage(path: str, mmap: bool = False) -> Storage:
     ValueError
          If the file did not contain a storage.
     """
-    with open(path, "rb") as file:
+    with open(file, "rb") as inf:
         chunk = find_chunk(
-            file, [ChunkIdentifier.NdArray, ChunkIdentifier.QuantizedArray])
+            inf, [ChunkIdentifier.NdArray, ChunkIdentifier.QuantizedArray])
         if chunk is None:
             raise ValueError('File did not contain a storage')
         if chunk == ChunkIdentifier.NdArray:
-            return NdArray.load(file, mmap)
+            return NdArray.load(inf, mmap)
         if chunk == ChunkIdentifier.QuantizedArray:
-            return QuantizedArray.load(file, mmap)
+            return QuantizedArray.load(inf, mmap)
         raise ValueError('Unexpected storage chunk.')
 
 

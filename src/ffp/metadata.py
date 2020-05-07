@@ -1,8 +1,8 @@
 """
 finalfusion metadata
 """
-
-from typing import IO
+from os import PathLike
+from typing import BinaryIO, Union
 
 import toml
 
@@ -22,19 +22,19 @@ class Metadata(dict, Chunk):
         return ChunkIdentifier.Metadata
 
     @staticmethod
-    def read_chunk(file: IO[bytes]) -> 'Metadata':
+    def read_chunk(file: BinaryIO) -> 'Metadata':
         file.seek(-12, 1)
         chunk_id, chunk_len = _read_binary(file, "<IQ")
         assert ChunkIdentifier(chunk_id) == Metadata.chunk_identifier()
         return Metadata(toml.loads(file.read(chunk_len).decode("utf-8")))
 
-    def write_chunk(self, file: IO[bytes]):
+    def write_chunk(self, file: BinaryIO):
         b_data = bytes(toml.dumps(self), "utf-8")
         _write_binary(file, "<IQ", int(self.chunk_identifier()), len(b_data))
         file.write(b_data)
 
 
-def load_metadata(path: str) -> Metadata:
+def load_metadata(path: Union[str, bytes, int, PathLike]) -> Metadata:
     """
     Load a Metadata chunk from the given file.
 

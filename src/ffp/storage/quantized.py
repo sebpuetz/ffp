@@ -7,7 +7,8 @@ the size of embedding matrices.
 """
 
 import struct
-from typing import IO, Tuple, Optional
+from os import PathLike
+from typing import Tuple, Optional, Union, BinaryIO
 
 import numpy as np
 
@@ -269,7 +270,7 @@ class QuantizedArray(Storage):
         return ChunkIdentifier.QuantizedArray
 
     @staticmethod
-    def read_chunk(file) -> 'QuantizedArray':
+    def read_chunk(file: BinaryIO) -> 'QuantizedArray':
         quantizer, embeds_shape, norms = QuantizedArray._read_quantized_header(
             file)
         n_embeddings, quantized_len = embeds_shape
@@ -280,7 +281,7 @@ class QuantizedArray(Storage):
         return QuantizedArray(quantizer, quantized_embeddings, norms)
 
     @staticmethod
-    def mmap_chunk(file) -> 'QuantizedArray':
+    def mmap_chunk(file: BinaryIO) -> 'QuantizedArray':
         quantizer, embeds_shape, norms = QuantizedArray._read_quantized_header(
             file)
         n_embeddings, quantized_len = embeds_shape
@@ -293,7 +294,7 @@ class QuantizedArray(Storage):
                                          shape=embeds_shape)
         return QuantizedArray(quantizer, quantized_embeddings, norms)
 
-    def write_chunk(self, file: IO[bytes]):
+    def write_chunk(self, file: BinaryIO):
         _write_binary(file, "<I", int(self.chunk_identifier()))
         padding = _pad_float32(file.tell())
         chunk_len = struct.calcsize("<IIIIIQII") + padding
@@ -320,7 +321,7 @@ class QuantizedArray(Storage):
 
     @staticmethod
     def _read_quantized_header(
-            file: IO[bytes]
+            file: BinaryIO
     ) -> Tuple[PQ, Tuple[int, int], Optional[np.ndarray]]:
         """
         Helper method to read the header of a quantized array chunk.
@@ -366,13 +367,14 @@ class QuantizedArray(Storage):
         return quantizer, (n_embeddings, quantized_len), norms
 
 
-def load_quantized_array(path: str, mmap: bool = False) -> QuantizedArray:
+def load_quantized_array(file: Union[str, bytes, int, PathLike],
+                         mmap: bool = False) -> QuantizedArray:
     """
     Load a quantized array chunk from the given file.
 
     Parameters
     ----------
-    path : str
+    file : str, bytes, int, PathLike
         Finalfusion file with a quantized array chunk.
     mmap : bool
         Toggles memory mapping the array buffer as read only.
@@ -387,14 +389,14 @@ def load_quantized_array(path: str, mmap: bool = False) -> QuantizedArray:
     ValueError
         If the file did not contain a QuantizedArray chunk.
     """
-    with open(path, "rb") as file:
-        chunk = find_chunk(file, [ChunkIdentifier.QuantizedArray])
+    with open(file, "rb") as inf:
+        chunk = find_chunk(inf, [ChunkIdentifier.QuantizedArray])
         if chunk is None:
             raise ValueError("File did not contain a QuantizedArray chunk")
         if chunk == ChunkIdentifier.QuantizedArray:
             if mmap:
-                return QuantizedArray.mmap_chunk(file)
-            return QuantizedArray.read_chunk(file)
+                return QuantizedArray.mmap_chunk(inf)
+            return QuantizedArray.read_chunk(inf)
         raise ValueError(f"unknown storage type: {chunk}")
 
 

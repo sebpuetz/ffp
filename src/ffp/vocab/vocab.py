@@ -3,7 +3,7 @@ Finalfusion Vocabulary interface
 """
 import abc
 import struct
-from typing import List, Optional, Dict, Tuple, IO, Iterable, Any, Union
+from typing import List, Optional, Dict, Tuple, Iterable, Any, Union, BinaryIO
 
 from ffp.io import Chunk, _write_binary, _read_binary
 
@@ -17,7 +17,7 @@ class Vocab(Chunk):
     """
     @property
     @abc.abstractmethod
-    def words(self) -> list:
+    def words(self) -> List[str]:
         """
         Get the list of known words
 
@@ -28,7 +28,7 @@ class Vocab(Chunk):
         """
     @property
     @abc.abstractmethod
-    def word_index(self) -> dict:
+    def word_index(self) -> Dict[str, int]:
         """
         Get the index of known words
 
@@ -49,8 +49,8 @@ class Vocab(Chunk):
            Exclusive upper bound of indices covered by the vocabulary.
         """
     @abc.abstractmethod
-    def idx(self, item: str, default: Union[list, int, None] = None
-            ) -> Optional[Union[list, int]]:
+    def idx(self, item: str, default: Optional[Union[List[int], int]] = None
+            ) -> Optional[Union[List[int], int]]:
         """
         Lookup the given query item.
 
@@ -66,11 +66,26 @@ class Vocab(Chunk):
         Returns
         -------
         index : Optional[Union[int, List[int]]]
-            * An integer if there is a single index for a known item.
-            * A list if the vocab can provide subword indices for a unknown item.
-            * The provided `default` item if the vocab can't provide indices.
+            ``int`` if there is a single index for a known item, ``list`` of indices if the vocab
+             can provide subword indices for a unknown item. The ``default`` item if the vocab
+             can't provide indices.
         """
     def __getitem__(self, item: str) -> Union[list, int]:
+        """
+        Lookup the query item.
+
+        This method raises an exception if the vocab can't provide indices.
+
+        Parameters
+        ----------
+        item : str
+            The query item
+
+        Raises
+        ------
+        KeyError
+            If no indices can be provided.
+        """
         return self.word_index[item]
 
     def __contains__(self, item: Any) -> bool:
@@ -113,7 +128,7 @@ def _validate_words_and_create_index(words, index):
     return index
 
 
-def _write_words_binary(b_words: Iterable[bytes], file: IO[bytes]):
+def _write_words_binary(b_words: Iterable[bytes], file: BinaryIO):
     """
     Helper method to write an iterable of bytes and their lengths.
     """
@@ -123,14 +138,14 @@ def _write_words_binary(b_words: Iterable[bytes], file: IO[bytes]):
         file.write(word)
 
 
-def _read_items(file: IO[bytes], length: int,
+def _read_items(file: BinaryIO, length: int,
                 indices=False) -> Tuple[List[str], Dict[str, int]]:
     """
     Helper method to read items from a vocabulary chunk.
 
     Parameters
     ----------
-    file : IO[bytes]
+    file : BinaryIO
         input file
     length : int
         number of items to read
