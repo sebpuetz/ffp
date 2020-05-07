@@ -14,6 +14,12 @@ from libc.stdint cimport int8_t, uint8_t, uint32_t, uint64_t, UINT32_MAX
 cdef class FinalfusionHashIndexer:
     """
     FinalfusionHashIndexer
+
+    FinalfusionHashIndexer is a hash-based subword indexer. It hashes n-grams with the FNV-1a
+    algorithm and maps the hash to a predetermined bucket space.
+
+    N-grams can be indexed directly through the `__call__` method or all n-grams in a string
+    can be indexed in bulk through the `subword_indices` method.
     """
     cdef public uint32_t min_n
     cdef public uint32_t max_n
@@ -21,8 +27,10 @@ cdef class FinalfusionHashIndexer:
     cdef uint64_t mask
 
     def __init__(self, bucket_exp=21, min_n=3, max_n=6):
-        assert max_n >= min_n > 0, "min_n needs to be greater than 0 and less than max_n"
-        assert 0 < bucket_exp <= 64, "bucket_exp needs to be greater than 0 and less than 65"
+        assert max_n >= min_n > 0, \
+            f"Min_n ({min_n}) must be greater than 0, max_n ({min_n}) must be >= min_n"
+        assert 0 < bucket_exp <= 64, \
+            f"bucket_exp ({bucket_exp}) needs to be greater than 0 and less than 65"
         self.min_n = min_n
         self.max_n = max_n
         self.buckets_exp = bucket_exp
@@ -33,17 +41,42 @@ cdef class FinalfusionHashIndexer:
 
     @property
     def idx_bound(self) -> int:
+        """
+        Get the **exclusive** upper bound
+
+        This is the number of distinct indices.
+
+        Returns
+        -------
+        idx_bound : int
+            Exclusive upper bound of the indexer.
+        """
         return pow(2, self.buckets_exp)
 
     cpdef subword_indices(self, str word, uint64_t offset = 0, bint bracket=True, bint with_ngrams=False):
         """
-        Get the subword indices for the given word.
-
-        :param word: the word
-        :param offset: is added to each index
-        :param bracket: whether to bracket the word with '<' and '>'
-        :param with_ngrams: whether to return the indices with corresponding ngrams
-        :return: List of subword indices, optionally as tuples with ngrams
+        Get the subword indices for a word.
+        
+        Parameters
+        ----------
+        word : str
+            The string to extract n-grams from
+        offset : int
+            The offset to add to the index, e.g. the length of the word-vocabulary.
+        bracket : bool
+            Toggles bracketing the input string with `<` and `>`
+        with_ngrams : bool
+            Toggles returning tuples of (ngram, idx)
+        
+        Returns
+        -------
+        indices : list
+            List of n-gram indices, optionally as `(str, int)` tuples.
+        
+        Raises
+        ------
+        TypeError
+            If `word` is None.
         """
         if word is None:
             raise TypeError("Can't extract ngrams for None type")
@@ -72,14 +105,22 @@ cdef class FinalfusionHashIndexer:
 cdef class FastTextIndexer:
     """
     FastTextIndexer
+
+    FastTextIndexer is a hash-based subword indexer. It hashes n-grams with (a slightly) FNV-1a
+    variant and maps the hash to a predetermined bucket space.
+
+    N-grams can be indexed directly through the `__call__` method or all n-grams in a string
+    can be indexed in bulk through the `subword_indices` method.
     """
     cdef public uint32_t min_n
     cdef public uint32_t max_n
     cdef public uint64_t n_buckets
 
     def __init__(self, n_buckets=2000000, min_n=3, max_n=6):
-        assert max_n >= min_n > 0, "min_n needs to be greater than 0 and less than max_n"
-        assert 0 < n_buckets <= UINT32_MAX, "number of buckets needs be between 0 and pow(2, 32)"
+        assert max_n >= min_n > 0, \
+            f"Min_n ({min_n}) must be greater than 0, max_n ({min_n}) must be >= min_n"
+        assert 0 < n_buckets <= UINT32_MAX, \
+            f"n_buckets ({n_buckets}) needs to be between 0 and {pow(2, 32)}"
         self.min_n = min_n
         self.max_n = max_n
         self.n_buckets = n_buckets
@@ -95,13 +136,28 @@ cdef class FastTextIndexer:
                           bint bracket=True,
                           bint with_ngrams=False):
         """
-        Get the subword indices for the given word.
-
-        :param word: the word
-        :param offset: is added to each index
-        :param bracket: whether to bracket the word with '<' and '>'
-        :param with_ngrams: whether to return the indices with corresponding ngrams
-        :return: List of subword indices, optionally as tuples with ngrams
+        Get the subword indices for a word.
+        
+        Parameters
+        ----------
+        word : str
+            The string to extract n-grams from
+        offset : int
+            The offset to add to the index, e.g. the length of the word-vocabulary.
+        bracket : bool
+            Toggles bracketing the input string with `<` and `>`
+        with_ngrams : bool
+            Toggles returning tuples of (ngram, idx)
+        
+        Returns
+        -------
+        indices : list
+            List of n-gram indices, optionally as `(str, int)` tuples.
+        
+        Raises
+        ------
+        TypeError
+            If `word` is None.
         """
         if word is None:
             raise TypeError("Can't extract ngrams for None type")
