@@ -1,13 +1,12 @@
 """
 Finalfusion Embeddings
 """
-import struct
 from os import PathLike
 from typing import Optional, Union, Tuple, List, BinaryIO
 
 import numpy as np
 
-from ffp.io import Chunk, ChunkIdentifier, Header
+from ffp.io import Chunk, ChunkIdentifier, Header, _read_binary
 from ffp.metadata import Metadata
 from ffp.norms import Norms
 from ffp.storage import Storage, NdArray, QuantizedArray
@@ -721,10 +720,11 @@ def load_fastText(file: Union[str, bytes, int, PathLike]) -> Embeddings:  # pyli
         metadata = _read_ft_cfg(inf)
         vocab = _read_ft_vocab(inf, metadata['buckets'], metadata['min_n'],
                                metadata['max_n'])
-        quantized = struct.unpack("<B", inf.read(1))[0]
+        quantized = _read_binary(inf, "<B")[0]
         if quantized:
-            raise NotImplementedError("Quantized storage is not supported")
-        rows, cols = struct.unpack("<QQ", inf.read(16))
+            raise NotImplementedError(
+                "Quantized storage is not supported for fastText models")
+        rows, cols = _read_binary(inf, "<QQ")
         matrix = np.fromfile(file=inf, count=rows * cols, dtype=np.float32)
         matrix = np.reshape(matrix, (rows, cols))
         for i, word in enumerate(vocab):
@@ -738,16 +738,15 @@ def load_fastText(file: Union[str, bytes, int, PathLike]) -> Embeddings:  # pyli
 
 
 def _read_ft_header(file: BinaryIO):
-    magic = struct.unpack("<I", file.read(4))[0]
+    magic, version = _read_binary(file, "<II")
     if magic != 793_712_314:
-        raise IOError("Magic should be 793_712_314, not: " + str(magic))
-    version = struct.unpack("<I", file.read(4))[0]
+        raise ValueError(f"Magic should be 793_712_314, not: {magic}")
     if version > 12:
-        raise ValueError("Expected version 12, got: " + str(version))
+        raise ValueError(f"Expected version 12, not: {version}")
 
 
 def _read_ft_cfg(file: BinaryIO) -> Metadata:
-    cfg = struct.unpack("<" + 12 * "I" + "d", file.read(12 * 4 + 8))
+    cfg = _read_binary(file, "<12Id")
     loss, model = cfg[6:8]  # map to string
     if loss == 1:
         loss = 'HierarchicalSoftmax'
@@ -781,14 +780,11 @@ def _read_ft_cfg(file: BinaryIO) -> Metadata:
 
 def _read_ft_vocab(file: BinaryIO, buckets: int, min_n: int,
                    max_n: int) -> FastTextVocab:
-    vocab_size = struct.unpack("<I", file.read(4))[0]
-    _ = struct.unpack("<I", file.read(4))[0]  # discard n_words
-    n_labels = struct.unpack("<I", file.read(4))[0]
+    vocab_size, _, n_labels = _read_binary(file, "<III")  # discard n_words
     if n_labels:
         raise NotImplementedError(
             "fastText prediction models are not supported")
-    _n_tokens = struct.unpack("<Q", file.read(8))[0]
-    prune_idx_size = struct.unpack("<q", file.read(8))[0]
+    _, prune_idx_size = _read_binary(file, "<Qq")  # discard n_tokens
     if prune_idx_size > 0:
         raise NotImplementedError("Pruned vocabs are not supported")
     words = []
@@ -802,8 +798,8 @@ def _read_ft_vocab(file: BinaryIO, buckets: int, min_n: int,
             if byte == b'':
                 raise EOFError
             word.extend(byte)
-        _freq = struct.unpack("<Q", file.read(8))[0]
-        entry_type = struct.unpack("<B", file.read(1))[0]
+        _ = _read_binary(file, "<Q")  # discard frequency
+        entry_type = _read_binary(file, "<B")[0]
         if entry_type != 0:
             raise ValueError("Non word entry", word)
     indexer = FastTextIndexer(buckets, min_n, max_n)
