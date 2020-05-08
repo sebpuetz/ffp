@@ -19,6 +19,13 @@ class Cutoff:  # pylint: disable=too-few-public-methods
         self.cutoff = cutoff
         self.mode = mode
 
+    def __repr__(self):
+        if self.mode:
+            mode = "min_freq"
+        else:
+            mode = "target_size"
+        return f'Cutoff({self.cutoff, mode})'
+
     @property
     def mode(self) -> str:
         """

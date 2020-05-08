@@ -9,15 +9,26 @@ from typing import Tuple, BinaryIO, Union
 import numpy as np
 
 from ffp.io import ChunkIdentifier, TypeId, FinalfusionFormatError, _pad_float32, _read_binary, \
-    _write_binary, find_chunk
+    _write_binary, find_chunk, Chunk
 from ffp.storage.storage import Storage
 
 
-class NdArray(np.ndarray, Storage):
+class NdArray(np.ndarray, Chunk, Storage):
     """
+    NdArray(array: numpy.ndarray)
+
     Array storage.
 
     Essentially a numpy matrix, either in-memory or memory-mapped.
+
+    Examples
+    --------
+    >>> matrix = np.float32(np.random.rand(10, 50))
+    >>> ndarray_storage = NdArray(matrix)
+    >>> np.allclose(matrix, ndarray_storage)
+    True
+    >>> ndarray_storage.shape
+    (10, 50)
     """
     def __new__(cls, array: np.ndarray):
         """
@@ -25,7 +36,7 @@ class NdArray(np.ndarray, Storage):
 
         Parameters
         ----------
-        array : np.ndarray
+        array : numpy.ndarray
             The storage buffer.
 
         Raises
@@ -37,23 +48,31 @@ class NdArray(np.ndarray, Storage):
             raise TypeError("expected 2-d float32 array")
         return array.view(cls)
 
-    @staticmethod
-    def chunk_identifier():
-        return ChunkIdentifier.NdArray
+    @property
+    def shape(self) -> Tuple[int, int]:
+        """
+        The storage shape
+
+        Returns
+        -------
+        (rows, cols) : Tuple[int, int]
+            Tuple with storage dimensions
+        """
+        return super().shape
+
+    @classmethod
+    def load(cls, file: BinaryIO, mmap=False) -> 'NdArray':
+        return cls.mmap_storage(file) if mmap else cls.read_chunk(file)
 
     @staticmethod
-    def read_chunk(file) -> 'NdArray':
+    def read_chunk(file: BinaryIO) -> 'NdArray':
         rows, cols = NdArray._read_array_header(file)
         array = np.fromfile(file=file, count=rows * cols, dtype=np.float32)
         array = np.reshape(array, (rows, cols))
         return NdArray(array)
 
-    @property
-    def shape(self) -> Tuple[int, int]:
-        return super().shape
-
     @staticmethod
-    def mmap_chunk(file) -> 'NdArray':
+    def mmap_storage(file: BinaryIO) -> 'NdArray':
         rows, cols = NdArray._read_array_header(file)
         offset = file.tell()
         file.seek(rows * cols * struct.calcsize('f'), 1)
@@ -63,6 +82,10 @@ class NdArray(np.ndarray, Storage):
                       mode='r',
                       offset=offset,
                       shape=(rows, cols)))
+
+    @staticmethod
+    def chunk_identifier():
+        return ChunkIdentifier.NdArray
 
     @staticmethod
     def _read_array_header(file: BinaryIO) -> Tuple[int, int]:
@@ -106,7 +129,7 @@ class NdArray(np.ndarray, Storage):
         _write_binary(file, f"{padding}x")
         self.tofile(file)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> Union[np.ndarray, 'NdArray']:
         if isinstance(key, slice):
             return super().__getitem__(key)
         return super().__getitem__(key).view(np.ndarray)
@@ -140,7 +163,7 @@ def load_ndarray(file: Union[str, bytes, int, PathLike],
             raise ValueError("File did not contain a NdArray chunk")
         if chunk == ChunkIdentifier.NdArray:
             if mmap:
-                return NdArray.mmap_chunk(inf)
+                return NdArray.mmap_storage(inf)
             return NdArray.read_chunk(inf)
         raise ValueError(f"unknown storage type: {chunk}")
 

@@ -87,35 +87,6 @@ class Chunk(ABC):
         file : BinaryIO
             Output file for the Chunk
         """
-    @staticmethod
-    def read_chunk_header(file: BinaryIO
-                          ) -> Optional[Tuple['ChunkIdentifier', int]]:
-        """
-        Reads the chunk header.
-
-        After successfully reading the header, a tuple containing
-        :class:`.ChunkIdentifier` and and integer specifying the chunk size in
-        bytes are returned.
-
-        Parameters
-        ----------
-        file : BinaryIO
-            a finalfusion file positioned before a chunk header.
-
-        Returns
-        -------
-        chunk_header : Optional[(ChunkIdentifier, int)]
-            None is returned iff the reader is at EOF.
-
-        Raises
-        ------
-        FinalfusionFormatError
-            If only part of the header could be read.
-        """
-        val = _read_binary(file, "<IQ")
-        if val is None:
-            return None
-        return ChunkIdentifier(val[0]), val[1]
 
 
 class Header(Chunk):
@@ -195,7 +166,7 @@ def find_chunk(file: BinaryIO,
     file.seek(0)
     Header.read_chunk(file)
     while True:
-        chunk_header = Chunk.read_chunk_header(file)
+        chunk_header = _read_chunk_header(file)
         if chunk_header is None:
             return None
         chunk_id, chunk_size = chunk_header
@@ -317,6 +288,36 @@ def _read_binary(file: BinaryIO, struct_fmt: str) -> Optional[Tuple[int]]:
     if len(buf) != size:
         raise FinalfusionFormatError(f'Could not read {size} bytes from file')
     return struct.unpack(struct_fmt, buf)
+
+
+def _read_chunk_header(file: BinaryIO
+                       ) -> Optional[Tuple['ChunkIdentifier', int]]:
+    """
+    Reads the chunk header.
+
+    After successfully reading the header, a tuple containing
+    :class:`.ChunkIdentifier` and and integer specifying the chunk size in
+    bytes are returned.
+
+    Parameters
+    ----------
+    file : BinaryIO
+        a finalfusion file positioned before a chunk header.
+
+    Returns
+    -------
+    chunk_header : Optional[(ChunkIdentifier, int)]
+        None is returned iff the reader is at EOF.
+
+    Raises
+    ------
+    FinalfusionFormatError
+        If only part of the header could be read.
+    """
+    val = _read_binary(file, "<IQ")
+    if val is None:
+        return None
+    return ChunkIdentifier(val[0]), val[1]
 
 
 __all__ = [

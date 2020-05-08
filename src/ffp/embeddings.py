@@ -6,7 +6,7 @@ from typing import Optional, Union, Tuple, List, BinaryIO
 
 import numpy as np
 
-from ffp.io import Chunk, ChunkIdentifier, Header, _read_binary
+from ffp.io import Chunk, ChunkIdentifier, Header, _read_binary, _read_chunk_header
 from ffp.metadata import Metadata
 from ffp.norms import Norms
 from ffp.storage import Storage, NdArray, QuantizedArray
@@ -575,7 +575,7 @@ def load_finalfusion(file: Union[str, bytes, int, PathLike],
     """
     with open(file, 'rb') as inf:
         _ = Header.read_chunk(inf)
-        chunk_id, _ = Chunk.read_chunk_header(inf)
+        chunk_id, _ = _read_chunk_header(inf)
         embeddings = Embeddings()
         while True:
             if chunk_id.is_storage():
@@ -587,9 +587,9 @@ def load_finalfusion(file: Union[str, bytes, int, PathLike],
             elif chunk_id == ChunkIdentifier.Metadata:
                 embeddings.metadata = Metadata.read_chunk(inf)
             else:
-                chunk_id, _ = Chunk.read_chunk_header(inf)
+                chunk_id, _ = _read_chunk_header(inf)
                 raise TypeError("Unknown chunk type: " + str(chunk_id))
-            chunk_header = Chunk.read_chunk_header(inf)
+            chunk_header = _read_chunk_header(inf)
             if chunk_header is None:
                 break
             chunk_id, _ = chunk_header

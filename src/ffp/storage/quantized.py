@@ -13,7 +13,7 @@ from typing import Tuple, Optional, Union, BinaryIO
 import numpy as np
 
 from ffp.io import _pad_float32, ChunkIdentifier, TypeId, FinalfusionFormatError, find_chunk, \
-    _read_binary, _write_binary
+    _read_binary, _write_binary, Chunk
 from ffp.storage.storage import Storage
 
 
@@ -149,7 +149,7 @@ class PQ:
         return out
 
 
-class QuantizedArray(Storage):
+class QuantizedArray(Chunk, Storage):
     """
     QuantizedArray storage.
 
@@ -159,23 +159,36 @@ class QuantizedArray(Storage):
 
     QuantizedArrays offer two ways of indexing:
 
-    1. Through the `__getitem__` method:
-        * passing a slice returns a new QuantizedArray.
+    1. :meth:`QuantizedArray.__getitem__`:
+        * passing a slice returns a new view of the QuantizedArray.
         * passing an integer returns a single embedding, lists and arrays return ndims + 1
           dimensional embeddings.
-    2. Through the `embedding` method:
-        * embeddings can be written to an output buffer by providing the `out` parameter.
+    2. :meth:`QuantizedArray.embedding`:
+        * embeddings can be written to an output buffer.
         * passing a slice returns a matrix holding **reconstructed** embeddings.
-        * otherwise, this method behaves like `__getitem__`
+        * otherwise, this method behaves like :meth:`~QuantizedArray.__getitem__`
 
-    A QuantizedArray can be treated as numpy.ndarray through the numpy.asarray function.
-    This restores the original vector space and copies it to a new buffer.
+    A QuantizedArray can be treated as :class:`numpy.ndarray` through :func:`numpy.asarray`.
+    This restores the original matrix and copies into a **new** buffer.
 
-    Using common numpy functions on a QuantizedArray will produce a regular ndarray in the process
-    and is therefore an expensive operation.
+    Using common numpy functions on a QuantizedArray will produce a regular
+    :class:`~numpy.ndarray` in the process and is therefore an expensive operation.
     """
     def __init__(self, pq: PQ, quantized_embeddings: np.ndarray,
                  norms: Optional[np.ndarray]):
+        """
+        Initialize a QuantizedArray.
+
+        Parameters
+        ----------
+        pq : PQ
+            A product quantizer
+        quantized_embeddings : numpy.ndarray
+            The quantized embeddings
+        norms : numpy.ndarray, optional
+            Optional norms corresponding to the quantized embeddings. Reconstructed embeddings are
+            scaled by their norm.
+        """
         super().__init__()
         self._quantizer = pq
         self._quantized_embeddings = quantized_embeddings
@@ -190,29 +203,25 @@ class QuantizedArray(Storage):
         """
         Get embeddings.
 
-        * if `key` is an integer, a single reconstructed embedding is returned.
-        * if `key` is a list of integers or a slice, a matrix of reconstructed embeddings is
+        * if ``key`` is an integer, a single reconstructed embedding is returned.
+        * if ``key`` is a list of integers or a slice, a matrix of reconstructed embeddings is
           returned.
-        * if `key` is an n-dimensional array, a tensor with reconstructed embeddings is returned.
+        * if ``key`` is an n-dimensional array, a tensor with reconstructed embeddings is returned.
           This tensor has one new axis in the last dimension containing the embeddings.
 
-        If `out` is specified, the reconstruction is written to this buffer.
+        If ``out`` is passed, the reconstruction is written to this buffer. ``out.shape`` needs to
+        match the dimensions described above.
 
         Parameters
         ----------
-        key : int, list, np.ndarray, slice
+        key : int, list, numpy.ndarray, slice
             Key specifying which embeddings to retrieve.
-        out : np.ndarray
+        out : numpy.ndarray
             Array to reconstruct the embeddings into.
-            * If `key` is a list or slice, `out` needs to be a `len(key) * reconstructed_len`
-              matrix.
-            * If `key` is an integer, `out`needs to be an array wit `reconstructed_len` entries.
-            * If `key` is an n-dimensional array, `out` needs to match the dimensions of `key` and
-              have an additional `reconstructed_len` sized axis in the last dimension.
 
         Returns
         -------
-        reconstruction : np.ndarray
+        reconstruction : numpy.ndarray
             The reconstructed embedding or embeddings.
         """
         quantized = self._quantized_embeddings[key]
@@ -265,9 +274,9 @@ class QuantizedArray(Storage):
         return self._norms[:, None] * self._quantizer.reconstruct(
             self._quantized_embeddings)
 
-    @staticmethod
-    def chunk_identifier() -> ChunkIdentifier:
-        return ChunkIdentifier.QuantizedArray
+    @classmethod
+    def load(cls, file: BinaryIO, mmap=False) -> 'QuantizedArray':
+        return cls.mmap_storage(file) if mmap else cls.read_chunk(file)
 
     @staticmethod
     def read_chunk(file: BinaryIO) -> 'QuantizedArray':
@@ -281,7 +290,7 @@ class QuantizedArray(Storage):
         return QuantizedArray(quantizer, quantized_embeddings, norms)
 
     @staticmethod
-    def mmap_chunk(file: BinaryIO) -> 'QuantizedArray':
+    def mmap_storage(file: BinaryIO) -> 'QuantizedArray':
         quantizer, embeds_shape, norms = QuantizedArray._read_quantized_header(
             file)
         n_embeddings, quantized_len = embeds_shape
@@ -318,6 +327,10 @@ class QuantizedArray(Storage):
         if norms:
             self._norms.tofile(file)
         self._quantized_embeddings.tofile(file)
+
+    @staticmethod
+    def chunk_identifier() -> ChunkIdentifier:
+        return ChunkIdentifier.QuantizedArray
 
     @staticmethod
     def _read_quantized_header(
@@ -395,7 +408,7 @@ def load_quantized_array(file: Union[str, bytes, int, PathLike],
             raise ValueError("File did not contain a QuantizedArray chunk")
         if chunk == ChunkIdentifier.QuantizedArray:
             if mmap:
-                return QuantizedArray.mmap_chunk(inf)
+                return QuantizedArray.mmap_storage(inf)
             return QuantizedArray.read_chunk(inf)
         raise ValueError(f"unknown storage type: {chunk}")
 

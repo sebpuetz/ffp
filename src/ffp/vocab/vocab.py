@@ -5,10 +5,10 @@ import abc
 import struct
 from typing import List, Optional, Dict, Tuple, Iterable, Any, Union, BinaryIO
 
-from ffp.io import Chunk, _write_binary, _read_binary
+from ffp.io import _write_binary, _read_binary
 
 
-class Vocab(Chunk):
+class Vocab(abc.ABC):
     """
     Finalfusion vocabulary interface.
 
@@ -65,10 +65,10 @@ class Vocab(Chunk):
 
         Returns
         -------
-        index : Optional[Union[int, List[int]]]
-            ``int`` if there is a single index for a known item, ``list`` of indices if the vocab
-             can provide subword indices for a unknown item. The ``default`` item if the vocab
-             can't provide indices.
+        index : int, List[int], optional
+            ``int`` if there is a single index for a known item ``list`` of
+            indices if the vocab can provide subword indices for a unknown
+            item. The ``default`` item if the vocab can't provide indices.
         """
     def __getitem__(self, item: str) -> Union[list, int]:
         """

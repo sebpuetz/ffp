@@ -27,7 +27,7 @@ def load_storage(file: Union[str, bytes, int, PathLike],
 
     Returns
     -------
-    vocab : Union[NdArray, QuantizedArray]
+    vocab : Union[ffp.storage.NdArray, ffp.storage.QuantizedArray]
         First storage in the file.
 
     Raises

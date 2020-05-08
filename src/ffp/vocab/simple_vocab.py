@@ -6,10 +6,10 @@ from typing import List, Optional, Dict, Union, BinaryIO
 
 from ffp.vocab.vocab import Vocab, _write_words_binary, _calculate_serialized_size, _read_items
 from ffp.vocab.cutoff import Cutoff, _filter_and_sort, _count_words
-from ffp.io import ChunkIdentifier, find_chunk, _read_binary, _write_binary
+from ffp.io import ChunkIdentifier, find_chunk, _read_binary, _write_binary, Chunk
 
 
-class SimpleVocab(Vocab):
+class SimpleVocab(Chunk, Vocab):
     """
     Simple vocabulary.
 

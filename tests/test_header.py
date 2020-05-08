@@ -44,5 +44,5 @@ def test_find_chunk(tests_root):
                 ffp.io.ChunkIdentifier.NdArray
             ])
         f.seek(-12, 1)
-        chunk, _ = ffp.io.Chunk.read_chunk_header(f)
+        chunk, _ = ffp.io._read_chunk_header(f)
         assert chunk == ffp.io.ChunkIdentifier.SimpleVocab

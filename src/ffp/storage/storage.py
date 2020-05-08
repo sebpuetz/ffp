@@ -5,10 +5,8 @@ Storage
 import abc
 from typing import Tuple, BinaryIO
 
-from ffp.io import Chunk
 
-
-class Storage(Chunk):
+class Storage:
     """
     Common interface to finalfusion storage types.
     """
@@ -16,32 +14,53 @@ class Storage(Chunk):
     @abc.abstractmethod
     def shape(self) -> Tuple[int, int]:
         """
-        Get the shape of the storage
-        :return: int tuple containing (rows, cols)
+        The storage shape
+
+        Returns
+        -------
+        (rows, cols) : Tuple[int, int]
+            Tuple with storage dimensions
         """
     @abc.abstractmethod
     def __getitem__(self, key):
         pass
 
     @classmethod
+    @abc.abstractmethod
     def load(cls, file: BinaryIO, mmap=False) -> 'Storage':
         """
         Load Storage from the given finalfusion file.
 
-        :param file: file object with finalfusion storage
-        :param mmap: whether to mmap the storage
-        :return: Storage
-        """
-        return cls.mmap_chunk(file) if mmap else cls.read_chunk(file)
+        Parameters
+        ----------
+        file : BinaryIO
+            File at the beginning of a finalfusion storage
+        mmap : bool
+            Toggles memory mapping the buffer.
 
+        Returns
+        -------
+        storage : Storage
+            The storage from the file.
+        """
     @staticmethod
     @abc.abstractmethod
-    def mmap_chunk(file: BinaryIO) -> 'Storage':
+    def mmap_storage(file: BinaryIO) -> 'Storage':
         """
+        Memory map the storage.
 
-        Memory maps the storage as a read-only buffer.
-        :param file: File in finalfusion format containing a storage chunk.
-        :return: Storage
+        Parallel method to :func:`ffp.io.Chunk.read_chunk`. Instead of storing the
+        :class:`Storage` in-memory, it memory maps the embeddings.
+
+        Parameters
+        ----------
+        file : BinaryIO
+            File at the beginning of a finalfusion storage
+
+        Returns
+        -------
+        storage : Storage
+            The memory mapped storage.
         """
 
 

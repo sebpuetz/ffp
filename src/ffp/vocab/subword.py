@@ -8,7 +8,7 @@ from abc import abstractmethod
 from os import PathLike
 from typing import List, Optional, Tuple, Any, Union, Dict, BinaryIO
 
-from ffp.io import ChunkIdentifier, find_chunk, _write_binary, _read_binary
+from ffp.io import ChunkIdentifier, find_chunk, _write_binary, _read_binary, Chunk
 from ffp.subwords import ExplicitIndexer, FastTextIndexer, FinalfusionHashIndexer, word_ngrams
 from ffp.vocab.vocab import Vocab, _validate_words_and_create_index, _calculate_serialized_size, \
     _write_words_binary, _read_items
@@ -136,13 +136,13 @@ class SubwordVocab(Vocab):
         return super(SubwordVocab, self).__eq__(other)
 
 
-class FinalfusionBucketVocab(SubwordVocab):
+class FinalfusionBucketVocab(Chunk, SubwordVocab):
     """
     Finalfusion Bucket Vocabulary.
     """
     def __init__(self,
                  words: List[str],
-                 indexer: FinalfusionHashIndexer = FinalfusionHashIndexer(21),
+                 indexer: FinalfusionHashIndexer = None,
                  index: Optional[Dict[str, int]] = None):
         """
         Initialize a FinalfusionBucketVocab.
@@ -174,6 +174,8 @@ class FinalfusionBucketVocab(SubwordVocab):
         AssertionError
             If the indexer is not a FinalfusionHashIndexer.
         """
+        if indexer is None:
+            indexer = FinalfusionHashIndexer(21)
         assert isinstance(indexer, FinalfusionHashIndexer)
         super().__init__()
         self._index = _validate_words_and_create_index(words, index)
@@ -183,8 +185,8 @@ class FinalfusionBucketVocab(SubwordVocab):
     @staticmethod
     def from_corpus(
             file: Union[str, bytes, int, PathLike],
-            cutoff=Cutoff(30, mode='min_freq'),
-            indexer: FinalfusionHashIndexer = FinalfusionHashIndexer(21),
+            cutoff: Optional[Cutoff] = None,
+            indexer: Optional[FinalfusionHashIndexer] = None,
     ) -> Tuple['FinalfusionBucketVocab', List[int]]:
         """
         Build a Finalfusion Bucket Vocabulary from a corpus.
@@ -211,8 +213,10 @@ class FinalfusionBucketVocab(SubwordVocab):
         AssertionError
             If the indexer is not a FinalfusionHashIndexer.
         """
-        assert isinstance(indexer, FinalfusionHashIndexer)
+        assert indexer is None or isinstance(indexer, FinalfusionHashIndexer)
         cnt = _count_words(file)
+        if cutoff is None:
+            cutoff = Cutoff(30, mode='min_freq')
         words, counts = _filter_and_sort(cnt, cutoff)
         return FinalfusionBucketVocab(words, indexer), counts
 
@@ -263,13 +267,13 @@ class FinalfusionBucketVocab(SubwordVocab):
         return super(FinalfusionBucketVocab, self).__eq__(other)
 
 
-class FastTextVocab(SubwordVocab):
+class FastTextVocab(Chunk, SubwordVocab):
     """
     FastText vocabulary
     """
     def __init__(self,
                  words: List[str],
-                 indexer: FastTextIndexer = FastTextIndexer(2000000),
+                 indexer: FastTextIndexer = None,
                  index: Optional[Dict[str, int]] = None):
         """
         Initialize a FastTextVocab.
@@ -301,6 +305,8 @@ class FastTextVocab(SubwordVocab):
         AssertionError
             If the indexer is not a FastTextIndexer.
         """
+        if indexer is None:
+            indexer = FastTextIndexer(2000000)
         assert isinstance(indexer, FastTextIndexer)
         super().__init__()
         self._index = _validate_words_and_create_index(words, index)
@@ -310,8 +316,8 @@ class FastTextVocab(SubwordVocab):
     @staticmethod
     def from_corpus(
             file: Union[str, bytes, int, PathLike],
-            cutoff: Cutoff = Cutoff(30, mode='min_freq'),
-            indexer: FastTextIndexer = FastTextIndexer(2000000),
+            cutoff: Optional[Cutoff] = None,
+            indexer: Optional[FastTextIndexer] = None,
     ) -> Tuple['FastTextVocab', List[int]]:
         """
         Build a fastText vocabulary from a corpus.
@@ -320,10 +326,10 @@ class FastTextVocab(SubwordVocab):
         ----------
         file: str, bytes, int, PathLike
             File with white-space separated tokens.
-        cutoff : Cutoff
+        cutoff : Cutoff, optional
             Frequency cutoff or target size to restrict vocabulary size. Defaults to
             minimum frequency cutoff of 30.
-        indexer : FastTextIndexer
+        indexer : FastTextIndexer, optional
             Subword indexer to use for the vocabulary. Defaults to an indexer
             with 2,000,000 buckets with range 3-6.
 
@@ -338,8 +344,10 @@ class FastTextVocab(SubwordVocab):
         AssertionError
             If the indexer is not a FastTextIndexer.
         """
-        assert isinstance(indexer, FastTextIndexer)
+        assert indexer is None or isinstance(indexer, FastTextIndexer)
         cnt = _count_words(file)
+        if cutoff is None:
+            cutoff = Cutoff(30, mode='min_freq')
         words, counts = _filter_and_sort(cnt, cutoff)
         return FastTextVocab(words, indexer), counts
 
@@ -390,11 +398,44 @@ class FastTextVocab(SubwordVocab):
         return super(FastTextVocab, self).__eq__(other)
 
 
-class ExplicitVocab(SubwordVocab):
+class ExplicitVocab(Chunk, SubwordVocab):
     """
     A vocabulary with explicitly stored n-grams.
     """
-    def __init__(self, words, indexer, index=None):
+    def __init__(self,
+                 words: List[str],
+                 indexer: ExplicitIndexer,
+                 index: Dict[str, int] = None):
+        """
+        Initialize an ExplicitVocab.
+
+        Initializes the vocabulary with the given words, subword indexer and an
+        optional word index.
+
+        If no index is given, the nth word in the `words` list is assigned
+        index `n`. The word list cannot contain duplicate entries and it needs
+        to be of same length as the index.
+
+        Parameters
+        ----------
+        words : List[str]
+            List of unique words
+        indexer : ExplicitIndexer
+            Subword indexer to use for the vocabulary.
+        index : Dict[str, int], optional
+            Dictionary providing a word -> index mapping.
+
+        Raises
+        ------
+        ValueError
+            if the length of ``index`` and ``word`` doesn't match.
+        AssertionError
+            If the indexer is not an ExplicitIndexer.
+
+        See Also
+        --------
+        :class:`.ExplicitIndexer`
+        """
         assert isinstance(indexer, ExplicitIndexer)
         super().__init__()
         self._index = _validate_words_and_create_index(words, index)
@@ -404,8 +445,8 @@ class ExplicitVocab(SubwordVocab):
     @staticmethod
     def from_corpus(file: Union[str, bytes, int, PathLike],
                     ngram_range=(3, 6),
-                    token_cutoff: Cutoff = Cutoff(30, mode='min_freq'),
-                    ngram_cutoff: Cutoff = Cutoff(30, mode='min_freq')):
+                    token_cutoff: Optional[Cutoff] = None,
+                    ngram_cutoff: Optional[Cutoff] = None):
         """
         Build an ExplicitVocab from a corpus.
 
@@ -415,10 +456,10 @@ class ExplicitVocab(SubwordVocab):
             File with white-space separated tokens.
         ngram_range : Tuple[int, int]
             Specifies the n-gram range for the indexer.
-        token_cutoff : Cutoff
+        token_cutoff : Cutoff, optional
             Frequency cutoff or target size to restrict token vocabulary size. Defaults to
             minimum frequency cutoff of 30.
-        ngram_cutoff : Cutoff
+        ngram_cutoff : Cutoff, optional
             Frequency cutoff or target size to restrict ngram vocabulary size. Defaults to
             minimum frequency cutoff of 30.
 
