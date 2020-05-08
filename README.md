@@ -1,6 +1,10 @@
+[![Documentation Status](https://readthedocs.org/projects/ffp/badge/?version=latest)](https://ffp.readthedocs.io/en/latest/?badge=latest)
+
 # ffp
 
 Interface to [finalfusion](https://finalfusion.github.io) written in (almost) pure Python. `ffp` supports reading from various embedding formats and more liberal construction of embeddings from components compared to the other `finalfusion` interfaces. Lots of pretrained [finalfrontier](https://github.com/finalfusion/finalfrontier/) embeddings are available [here](https://finalfusion.github.io/pretrained), fastText embeddings converted to finalfusion can be found [here](http://www.sfs.uni-tuebingen.de/a3-public-data/finalfusion-fasttext/)
+
+Documentation can be found at https://ffp.readthedocs.io/.
 
 This is an early version of `ffp`, feedback is very much appreciated!
 
@@ -88,5 +92,3 @@ rand_matrix = np.float32(np.random.rand(vocab.idx_bound, 300))
 storage = ffp.storage.NdArray(rand_matrix)
 e = ffp.embeddings.Embeddings(vocab=vocab, storage=storage)
 ~~~
-
-**Note** This is not the [official python module](https://github.com/finalfusion/finalfusion-python) for finalfusion.
