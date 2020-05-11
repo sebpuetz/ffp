@@ -180,6 +180,13 @@ def test_unknown_embeddings(embeddings_fifu, bucket_vocab_embeddings_fifu):
         embeddings_fifu.embedding("OOV",
                                   default=np.zeros(10, dtype=np.float32)),
         np.array([0.] * 10)), "Unknown lookup with 'list' default failed"
+    out = np.zeros(10, dtype=np.float32)
+    default = np.ones(10, dtype=np.float32)
+    out2 = embeddings_fifu.embedding("OOV", default=default, out=out)
+    assert out is out2
+    assert np.allclose(out, default)
+    out2 = embeddings_fifu.embedding("OOV", default=0, out=out)
+    assert np.allclose(out2, 0)
     with pytest.raises(TypeError):
         _ = bucket_vocab_embeddings_fifu.embedding(None)
 

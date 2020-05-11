@@ -212,6 +212,9 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         """
         idx = self._vocab.idx(word)
         if idx is None:
+            if out is not None and default is not None:
+                out[:] = default
+                return out
             return default
         res = self._storage[idx]
         if res.ndim == 1:
@@ -267,6 +270,9 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
             raise TypeError("embeddings don't contain norms chunk")
         idx = self._vocab.idx(word)
         if idx is None:
+            if out is not None and default is not None:
+                out[:] = default[0]
+                return out, default[1]
             return default
         res = self._storage[idx]
         if res.ndim == 1:
