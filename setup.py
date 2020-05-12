@@ -20,7 +20,7 @@ else:
 NAME = 'ffp'
 setup(
     name=NAME,
-    version="0.1.2",
+    version="0.2.0",
     author="Sebastian Pütz",
     author_email="seb.puetz@gmail.com",
     classifiers=(
