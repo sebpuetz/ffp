@@ -5,6 +5,9 @@ import numpy as np
 import pytest
 import ffp
 import ffp.io
+from ffp import Embeddings, Norms
+from ffp.storage import NdArray
+from ffp.vocab import SimpleVocab
 
 TEST_NORMS = [
     6.557438373565674, 8.83176040649414, 6.164413928985596, 9.165151596069336,
@@ -28,78 +31,42 @@ def test_read_embeddings(tests_root):
         ffp.load_finalfusion("foo")
 
 
-def test_embeddings_from_storage():
+def test_embeddings_from_vocab_and_storage():
     matrix = np.tile(np.arange(0, 10, dtype=np.float32), (10, 1))
-    s = ffp.storage.NdArray(matrix)
-    e = ffp.Embeddings(storage=s)
+    s = NdArray(matrix)
+    v = SimpleVocab([str(i) for i in range(len(s))])
+    e = Embeddings(storage=s, vocab=v)
     assert np.allclose(e.storage, matrix)
     assert np.allclose(s, matrix)
+    with pytest.raises(AssertionError):
+        _ = Embeddings(storage=s, vocab=None)
+    with pytest.raises(AssertionError):
+        _ = Embeddings(storage=None, vocab=v)
+    with pytest.raises(AssertionError):
+        _ = Embeddings(storage=s[:-1], vocab=v)
+    with pytest.raises(AssertionError):
+        matrix = np.tile(np.arange(0, 10, dtype=np.float32), (11, 1))
+        _ = Embeddings(storage=NdArray(matrix), vocab=v)
 
 
 def test_set_norms(embeddings_fifu):
-    n = ffp.norms.Norms(np.ones(len(embeddings_fifu.vocab), dtype=np.float32))
+    n = Norms(np.ones(len(embeddings_fifu.vocab), dtype=np.float32))
     embeddings_fifu.norms = n
     assert np.allclose(n, embeddings_fifu.norms)
     embeddings_fifu.norms = None
     assert embeddings_fifu.norms is None
-    with pytest.raises(TypeError):
+    with pytest.raises(AssertionError):
         embeddings_fifu.norms = "bla"
-    with pytest.raises(TypeError):
+    with pytest.raises(AssertionError):
         embeddings_fifu.norms = np.ones(len(embeddings_fifu.vocab),
                                         dtype=np.float32)
     with pytest.raises(AssertionError):
-        embeddings_fifu.norms = ffp.norms.Norms(
+        embeddings_fifu.norms = Norms(
             np.ones(len(embeddings_fifu.vocab) - 1, dtype=np.float32))
     with pytest.raises(AssertionError):
-        embeddings_fifu.norms = ffp.norms.Norms(
+        embeddings_fifu.norms = Norms(
             np.ones(len(embeddings_fifu.vocab) + 1, dtype=np.float32))
     assert embeddings_fifu.norms is None
-
-
-def test_set_storage(embeddings_fifu):
-    s = ffp.storage.NdArray(np.zeros_like(embeddings_fifu.storage))
-    embeddings_fifu.storage = s
-    assert np.allclose(embeddings_fifu.storage, s)
-    embeddings_fifu.storage = None
-    assert embeddings_fifu.storage is None
-    s = ffp.storage.NdArray(
-        np.ones((len(embeddings_fifu.vocab), 1), dtype=np.float32))
-    embeddings_fifu.storage = s
-    assert np.allclose(embeddings_fifu.storage, s)
-    with pytest.raises(TypeError):
-        embeddings_fifu.storage = "bla"
-    with pytest.raises(TypeError):
-        embeddings_fifu.storage = np.ones((len(embeddings_fifu.vocab), 1),
-                                          dtype=np.float32)
-    with pytest.raises(AssertionError):
-        embeddings_fifu.storage = ffp.storage.NdArray(
-            np.ones((len(embeddings_fifu.vocab) - 1, 1), dtype=np.float32))
-    with pytest.raises(AssertionError):
-        embeddings_fifu.storage = ffp.storage.NdArray(
-            np.ones((len(embeddings_fifu.vocab) + 1, 1), dtype=np.float32))
-    assert np.allclose(embeddings_fifu.storage, s)
-
-
-def test_set_vocab(embeddings_fifu):
-    v = ffp.vocab.SimpleVocab(
-        [str(i) for i in range(len(embeddings_fifu.storage))])
-    embeddings_fifu.vocab = v
-    assert embeddings_fifu.vocab == v
-    embeddings_fifu.vocab = None
-    assert embeddings_fifu.vocab is None
-    with pytest.raises(TypeError):
-        embeddings_fifu.vocab = "bla"
-    with pytest.raises(TypeError):
-        embeddings_fifu.vocab = [
-            str(i) for i in range(len(embeddings_fifu.storage))
-        ]
-    with pytest.raises(AssertionError):
-        embeddings_fifu.vocab = ffp.vocab.SimpleVocab(
-            [str(i) for i in range(len(embeddings_fifu.storage) - 1)])
-    with pytest.raises(AssertionError):
-        embeddings_fifu.vocab = ffp.vocab.SimpleVocab(
-            [str(i) for i in range(len(embeddings_fifu.storage) + 1)])
-    assert embeddings_fifu.vocab is None
 
 
 def test_set_metadata(embeddings_fifu):

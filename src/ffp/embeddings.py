@@ -6,7 +6,8 @@ from typing import Optional, Union, Tuple, List, BinaryIO
 
 import numpy as np
 
-from ffp.io import Chunk, ChunkIdentifier, Header, _read_binary, _read_chunk_header
+from ffp.io import Chunk, ChunkIdentifier, Header, _read_binary, _read_chunk_header,\
+    FinalfusionFormatError
 from ffp.metadata import Metadata
 from ffp.norms import Norms
 from ffp.storage import Storage, NdArray, QuantizedArray
@@ -18,26 +19,30 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
     """
     Embeddings class.
 
-    Typically consists of a :class:`~ffp.storage.storage.Storage` and
-    :class:`~ffp.vocab.vocab.Vocab`. Other possible chunks are :class:`ffp.norms.Norms`
-    corresponding to the embeddings of the in-vocab tokens and  :class:`~ffp.metadata.Metadata`.
+    Embeddings always contain a :class:`~finalfusion.storage.storage.Storage` and
+    :class:`~finalfusion.vocab.vocab.Vocab`. Optional chunks are
+    :class:`~finalfusion.norms.Norms` corresponding to the embeddings of the in-vocab tokens and
+    :class:`~finalfusion.metadata.Metadata`.
 
-    If a vocabulary, storage are provided, embeddings can be retrieved through three methods:
+    Embeddings can be retrieved through three methods:
 
     1. :meth:`Embeddings.embedding` allows to provide a default value and returns
        this value if no embedding could be found.
     2. :meth:`Embeddings.__getitem__` retrieves an embedding for the query but
        raises an exception if it cannot retrieve an embedding.
-    3. :meth:`Embeddings.embedding_with_norm` requires a :class:`~ffp.norms.Norms`
+    3. :meth:`Embeddings.embedding_with_norm` requires a :class:`~finalfusion.norms.Norms`
        chunk and returns an embedding together with the corresponding L2 norm.
 
-    Embeddings wrap any combination of the 4 chunk types:
+    Embeddings are composed of the 4 chunk types:
 
-    1. :class:`~ffp.storage.Storage`, either :class:`~ffp.storage.ndarray.NdArray` or
-       :class:`~ffp.storage.quantized.QuantizedArray`
-    2. :class:`~ffp.storage.Vocab`, one of :class:`~ffp.vocab.simple_vocab.SimpleVocab`,
+    1. :class:`~ffp.storage.Storage`: either :class:`~ffp.storage.ndarray.NdArray` or
+       :class:`~ffp.storage.quantized.QuantizedArray` *(required)*
+    2. :class:`~ffp.vocab.Vocab`, one of :class:`~ffp.vocab.simple_vocab.SimpleVocab`,
        :class:`~ffp.vocab.subword.FinalfusionBucketVocab`,
        :class:`~ffp.vocab.subword.FastTextVocab` and :class:`~ffp.vocab.subword.ExplicitVocab`
+        *(required)*
+    3. :class:`~ffp.norms.Norms`
+    4. :class:`~ffp.metadata.Metadata`
 
     Examples
     --------
@@ -62,8 +67,8 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
     {'Some': 'value', 'numerical': 0}
     """
     def __init__(self,
-                 storage: Optional[Storage] = None,
-                 vocab: Optional[Vocab] = None,
+                 storage: Storage,
+                 vocab: Vocab,
                  norms: Optional[Norms] = None,
                  metadata: Optional[Metadata] = None):
         """
@@ -81,9 +86,9 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
 
         Parameters
         ----------
-        storage : Storage, optional
+        storage : Storage
             Embeddings Storage.
-        vocab : Vocab, optional
+        vocab : Vocab
             Embeddings Vocabulary.
         norms : Norms, optional
             Embeddings Norms.
@@ -95,24 +100,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         AssertionError
             If any of the conditions don't hold.
         """
-        assert storage is None or isinstance(
-            storage, Storage), "storage is required to be Storage"
-        assert vocab is None or isinstance(
-            vocab, Vocab), "vocab is required to be Vocab"
-        assert norms is None or isinstance(
-            norms, Norms), "norms is required to be Norms"
-        assert metadata is None or isinstance(
-            metadata, Metadata), "metadata is required to be Metadata"
-        if vocab is not None and storage is not None:
-            assert storage.shape[
-                0] == vocab.idx_bound, "Number of embeddings needs to be equal to vocab's idx_bound"
-        if vocab is not None and norms is not None:
-            assert len(vocab) == len(
-                norms), "Vocab length needs to be equal to number of norms."
-        if storage is not None and norms is not None:
-            assert storage.shape[0] >= len(
-                norms
-            ), "Number of embeddings needs to be greater than or equal to number of norms."
+        Embeddings._check_requirements(storage, vocab, norms, metadata)
         self._storage = storage
         self._vocab = vocab
         self._norms = norms
@@ -144,11 +132,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         """
         # no need to check for none since Vocab raises KeyError if it can't produce indices
         idx = self._vocab[item]
-        res = self._storage[idx]
-        if res.ndim == 1:
-            return res
-        embed_sum = res.sum(axis=0)
-        return embed_sum / np.linalg.norm(embed_sum)
+        return self._embedding(idx)[0]
 
     def embedding(self,
                   word: str,
@@ -166,15 +150,16 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         value is returned. This defaults to `None`. An embedding can not be retrieved if
         the vocabulary cannot provide an index for `word`.
 
-        This method fails if either the storage or vocab are not set.
+        This method never fails. If you do not provide a default value, check the return value
+        for None. ``out`` is left untouched if no embedding can be found and ``default`` is None.
 
         Parameters
         ----------
         word : str
             The query word.
-        out : numpy.ndarray, any, optional
+        out : numpy.ndarray, optional
             Optional output array to write the embedding into.
-        default: numpy.ndarray, any, optional
+        default: numpy.ndarray, optional
             Optional default value to return if no embedding can be retrieved. Defaults to None.
 
         Returns
@@ -216,17 +201,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
                 out[:] = default
                 return out
             return default
-        res = self._storage[idx]
-        if res.ndim == 1:
-            if out is not None:
-                out[:] = res
-            else:
-                out = res
-        else:
-            out = np.add.reduce(res, 0, out=out, keepdims=False)
-            out /= np.linalg.norm(out)
-
-        return out
+        return self._embedding(idx, out)[0]
 
     def embedding_with_norm(self,
                             word: str,
@@ -234,7 +209,7 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
                             default: Optional[Tuple[np.ndarray, float]] = None
                             ) -> Optional[Tuple[np.ndarray, float]]:
         """
-        Embedding lookup.
+        Embedding lookup with norm.
 
         Looks up the embedding for the input word together with its norm.
 
@@ -244,20 +219,20 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         value is returned. This defaults to `None`. An embedding can not be retrieved if
         the vocabulary cannot provide an index for `word`.
 
-        This method fails if either storage, vocab or norms are not set.
+        This method raises a TypeError if norms are not set.
 
         Parameters
         ----------
         word : str
             The query word.
-        out : Optional[numpy.ndarray]
+        out : numpy.ndarray, optional
             Optional output array to write the embedding into.
-        default: Optional[numpy.ndarray]
+        default: Tuple[numpy.ndarray, float], optional
             Optional default value to return if no embedding can be retrieved. Defaults to None.
 
         Returns
         -------
-        (embedding, norm) : tuple, optional
+        (embedding, norm) : EmbeddingWithNorm, optional
             Tuple with the retrieved embedding or the default value at the first index and the
             norm at the second index.
 
@@ -274,117 +249,36 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
                 out[:] = default[0]
                 return out, default[1]
             return default
-        res = self._storage[idx]
-        if res.ndim == 1:
-            if out is not None:
-                out[:] = res
-            else:
-                out = res
-            return out, self._norms[idx]
-
-        out = np.add.reduce(res, 0, out=out, keepdims=False)
-        norm = np.linalg.norm(out)
-        out /= norm
-        return out, norm
+        return self._embedding(idx, out)
 
     @property
     def storage(self) -> Optional[Storage]:
         """
-        Get the :class:`Embeddings` :class:`ffp.storage.storage.Storage`.
-
-        Returns None if no storage is set.
-
-        :Setter: Sets a new storage.
-        :Getter: Get the storage.
+        Get the :class:`~finalfusion.storage.storage.Storage`.
 
         Returns
         -------
-        storage : Storage, optional
+        storage : Storage
             The embeddings storage.
-
-        Raises
-        ------
-        AssertionError
-            if ``embeddings.storage.shape[0] != embeddings.vocab.idx_bound`` or
-            ``len(embeddings.norms) > embeddings.storage.shape[0]``
-        TypeError
-            If storage is neither a Storage nor None.
         """
         return self._storage
-
-    @storage.setter
-    def storage(self, storage: Optional[Storage]):
-        if storage is None:
-            self._storage = None
-        elif isinstance(storage, Storage):
-            if self._norms is not None:
-                assert storage.shape[0] >= len(
-                    self._norms
-                ), "Number of embeddings needs to be greater than or equal to number of norms."
-            if self._vocab is not None:
-                assert storage.shape[
-                    0] == self._vocab.idx_bound,\
-                    "Number of embeddings needs to be equal to vocab's idx_bound"
-            self._storage = storage
-        else:
-            raise TypeError("Expected 'None' or 'Vocab'.")
 
     @property
     def vocab(self) -> Optional[Vocab]:
         """
-        The :class:`~ffp.vocab.vocab.Vocab`.
-
-        :Getter: Returns None or the Vocabulary.
-        :Setter: Set the vocabulary.
+        The :class:`~finalfusion.vocab.vocab.Vocab`.
 
         Returns
         -------
-        vocab : Vocab, optional
-            The vocabulary or `None`.
-
-        Raises
-        ------
-        AssertionError
-            if ``embeddings.storage.shape[0] != embeddings.vocab.idx_bound`` or
-            ``len(embeddings.norms) != len(embeddings.vocab)``
-        TypeError
-            If vocab is neither a Vocab nor None.
-
-        Examples
-        --------
-        >>> words = ['Some', 'words']
-        >>> vocab = SimpleVocab(words)
-        >>> embeddings = Embeddings(vocab=vocab)
-        >>> embeddings.vocab.words
-        ['Some', 'words']
-
-        >>> embeddings.vocab['Some']
-        0
+        vocab : Vocab
+            The vocabulary
         """
         return self._vocab
-
-    @vocab.setter
-    def vocab(self, vocab: Optional[Vocab]):
-        if vocab is None:
-            self._vocab = None
-        elif isinstance(vocab, Vocab):
-            if self._norms is not None:
-                assert len(vocab) == len(
-                    self._norms
-                ), "Vocab length needs to be equal to number of norms."
-            if self._storage is not None:
-                # pylint: disable=unsubscriptable-object
-                assert self._storage.shape[
-                    0] == vocab.idx_bound, \
-                    "Vocab's idx_bound needs to be equal to number of embeddings."
-            self._vocab = vocab
-        else:
-            raise TypeError("Expected 'None' or 'Vocab'.")
 
     @property
     def norms(self) -> Optional[Norms]:
         """
-        The :class:`~ffp.vocab.vocab.Norms`.
+        The :class:`~finalfusion.vocab.vocab.Norms`.
 
         :Getter: Returns None or the Norms.
         :Setter: Set the Norms.
@@ -401,14 +295,6 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
             ``len(embeddings.norms) != len(embeddings.vocab)``
         TypeError
             If ``norms`` is neither Norms nor None.
-
-        Examples
-        --------
-        >>> norms = Norms(np.float32(np.abs(np.random.rand(5))))
-        >>> embeddings = Embeddings()
-        >>> embeddings.norms = norms
-        >>> np.isclose(embeddings.norms[0], norms[0])
-        True
         """
         return self._norms
 
@@ -416,23 +302,14 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
     def norms(self, norms: Optional[Norms]):
         if norms is None:
             self._norms = None
-        elif isinstance(norms, Norms):
-            if self._vocab is not None:
-                assert len(self._vocab) == len(
-                    norms), "Vocab and norms need to have same length"
-            if self._storage is not None:
-                # pylint: disable=unsubscriptable-object
-                assert self._storage.shape[0] >= len(
-                    norms
-                ), "Number of norms needs to be equal to or less than number of embeddings"
-            self._norms = norms
         else:
-            raise TypeError("Expected 'None' or 'Norms'.")
+            Embeddings._norms_compat(self.storage, self.vocab, self.norms)
+            self._norms = norms
 
     @property
     def metadata(self) -> Optional[Metadata]:
         """
-        The :class:`~ffp.vocab.vocab.Metadata`.
+        The :class:`~finalfusion.vocab.vocab.Metadata`.
 
         :Getter: Returns None or the Metadata.
         :Setter: Set the Metadata.
@@ -446,14 +323,6 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
         ------
         TypeError
             If ``metadata`` is neither Metadata nor None.
-
-        Examples
-        --------
-        >>> metadata = Metadata({"test": "value", "num": -1})
-        >>> embeddings = Embeddings()
-        >>> embeddings.metadata = metadata
-        >>> embeddings.metadata
-        {'test': 'value', 'num': -1}
         """
         return self._metadata
 
@@ -493,8 +362,6 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
             raise TypeError(
                 "Only bucketed embeddings can be converted to explicit.")
         vocab = self._vocab.to_explicit()
-        if self._storage is None:
-            return Embeddings(vocab=vocab)
         storage = np.zeros((vocab.idx_bound, self._storage.shape[1]),
                            dtype=np.float32)
         storage[:len(vocab)] = self._storage[:len(vocab)]
@@ -519,12 +386,10 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
             List of embeddings chunks.
         """
         chunks = []
-        if self._vocab is not None:
-            chunks.append(self.vocab)
-        if self._storage is not None:
-            chunks.append(self.storage)
         if self._metadata is not None:
             chunks.append(self.metadata)
+        chunks.append(self.vocab)
+        chunks.append(self.storage)
         if self._norms is not None:
             chunks.append(self.norms)
         return chunks
@@ -548,18 +413,54 @@ class Embeddings:  # pylint: disable=too-many-instance-attributes
                 chunk.write_chunk(outf)
 
     def __contains__(self, item):
-        if self._vocab is None:
-            raise TypeError("These embeddings don't contain a vocabulary")
         return item in self._vocab
-
-    def __repr__(self):
-        return "Embeddings { \n" + "\n".join(
-            [repr(chunk) for chunk in self.chunks()]) + "\n}"
 
     def __iter__(self):
         if self._norms is not None:
             return zip(self._vocab.words, self._storage, self._norms)
         return zip(self._vocab.words, self._storage)
+
+    def _embedding(self,
+                   idx: Union[int, List[int]],
+                   out: Optional[np.ndarray] = None
+                   ) -> Tuple[np.ndarray, Optional[float]]:
+        res = self._storage[idx]
+        if res.ndim == 1:
+            if out is not None:
+                out[:] = res
+            else:
+                out = res
+            if self._norms is not None:
+                norm = self._norms[idx]
+            else:
+                norm = None
+        else:
+            out = np.add.reduce(res, 0, out=out, keepdims=False)
+            norm = np.linalg.norm(out)
+            out /= norm
+        return out, norm
+
+    @staticmethod
+    def _check_requirements(storage: Storage, vocab: Vocab,
+                            norms: Optional[Norms],
+                            metadata: Optional[Metadata]):
+        assert isinstance(storage, Storage),\
+            "storage is required to be a Storage"
+        assert isinstance(vocab, Vocab), "vocab is required to be a Vocab"
+        assert storage.shape[0] == vocab.idx_bound,\
+            "Number of embeddings needs to be equal to vocab's idx_bound"
+        if norms is not None:
+            Embeddings._norms_compat(storage, vocab, norms)
+        assert metadata is None or isinstance(metadata, Metadata),\
+            "metadata is required to be Metadata"
+
+    @staticmethod
+    def _norms_compat(storage: Storage, vocab: Vocab, norms: Norms):
+        assert isinstance(norms, Norms), "norms are required to be Norms"
+        assert storage.shape[0] >= len(norms),\
+            "Number of embeddings needs to be greater than or equal to number of norms."
+        assert len(vocab) == len(norms),\
+            "Vocab length needs to be equal to number of norms."
 
 
 def load_finalfusion(file: Union[str, bytes, int, PathLike],
@@ -582,24 +483,38 @@ def load_finalfusion(file: Union[str, bytes, int, PathLike],
     with open(file, 'rb') as inf:
         _ = Header.read_chunk(inf)
         chunk_id, _ = _read_chunk_header(inf)
-        embeddings = Embeddings()
-        while True:
-            if chunk_id.is_storage():
-                embeddings.storage = _STORAGE_READERS[chunk_id](inf, mmap)
-            elif chunk_id.is_vocab():
-                embeddings.vocab = _VOCAB_READERS[chunk_id](inf)
-            elif chunk_id == ChunkIdentifier.NdNorms:
-                embeddings.norms = Norms.read_chunk(inf)
-            elif chunk_id == ChunkIdentifier.Metadata:
-                embeddings.metadata = Metadata.read_chunk(inf)
+        norms = None
+        metadata = None
+
+        if chunk_id == ChunkIdentifier.Metadata:
+            metadata = Metadata.read_chunk(inf)
+            chunk_id, _ = _read_chunk_header(inf)
+
+        if chunk_id.is_vocab():
+            vocab = _VOCAB_READERS[chunk_id](inf)
+        else:
+            raise FinalfusionFormatError(
+                f'Expected vocab chunk, not {str(chunk_id)}')
+
+        chunk_id, _ = _read_chunk_header(inf)
+        if chunk_id.is_storage():
+            storage = _STORAGE_READERS[chunk_id](inf, mmap)
+        else:
+            raise FinalfusionFormatError(
+                f'Expected vocab chunk, not {str(chunk_id)}')
+
+        chunk_id = _read_chunk_header(inf)
+        if chunk_id is not None:
+            if chunk_id[0] == ChunkIdentifier.NdNorms:
+                norms = Norms.read_chunk(inf)
             else:
-                chunk_id, _ = _read_chunk_header(inf)
-                raise TypeError("Unknown chunk type: " + str(chunk_id))
-            chunk_header = _read_chunk_header(inf)
-            if chunk_header is None:
-                break
-            chunk_id, _ = chunk_header
-        return embeddings
+                raise FinalfusionFormatError(
+                    f'Expected vocab chunk, not {str(chunk_id)}')
+
+        return Embeddings(storage=storage,
+                          vocab=vocab,
+                          norms=norms,
+                          metadata=metadata)
 
 
 def load_word2vec(file: Union[str, bytes, int, PathLike]) -> Embeddings:
