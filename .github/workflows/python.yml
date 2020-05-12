@@ -3,14 +3,33 @@ name: Python package
 on: [push, pull_request]
 
 jobs:
+  pylint-yapf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up Python 3.7
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.7
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pylint
+          pip install yapf==0.28
+          pip install -e .
+      - name: yapf
+        run: |
+          yapf src/ffp -r --diff
+          yapf tests -r --diff
+      - name: pylint
+        run: pylint src/ffp
   build:
-
+    needs: pylint-yapf
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
         python-version: [3.6, 3.7, 3.8]
-
     steps:
     - uses: actions/checkout@v1
     - name: Set up Python ${{ matrix.python-version }}
@@ -21,15 +40,6 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e .
-    - name: pylint
-      run: |
-        pip install pylint==2.4.4
-        pylint src/ffp
-    - name: yapf
-      run: |
-        pip install yapf==0.28
-        yapf src/ffp -r --diff
-        yapf tests -r --diff
     - name: Test with pytest
       run: |
         pip install pytest
